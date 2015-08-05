@@ -20,13 +20,13 @@
 '''
 
 import mathutils
-import itertools
+import numpy as np
 
-def write(filename, edges, vertices_coord, mean_res, convertToMeters, patchnames, polyLines, forcedEdges, gradEdges, lengths, vertexNames, disabled, logging):
-
+# Writes blockMeshDict to provided path
+def write(filepath, edges, vertices_coord, convertToMeters, patchnames, polyLines, edgeInfo, vertexNames, disabled, logging):
     if logging:
-        logFileName = filename.replace('blockMeshDict','log.swiftblock')
-        debugFileName = filename.replace('blockMeshDict','facesFound.obj')
+        logFileName = filepath.replace('blockMeshDict','log.swiftblock')
+        debugFileName = filepath.replace('blockMeshDict','facesFound.obj')
     else:
         logFileName = ''
         debugFileName = ''
@@ -39,12 +39,7 @@ def write(filename, edges, vertices_coord, mean_res, convertToMeters, patchnames
     # Get the blockstructure, which edges that have the same #of cells, some info on face, and edges-in-use
     logFile, block_print_out, dependent_edges, face_info, all_edges, faces_as_list_of_nodes = blockFinder(edges, vertices_coord, logFileName, debugFileName, disabled)
 
-    # Set edges resolution
-    edgeRes = setEdgeRes(vertices_coord, dependent_edges, forcedEdges, mean_res, lengths)
-
-#    offendingBlocks = []
-
-    bmFile = open(filename,'w')
+    bmFile = open(filepath,'w')
     bmFile.write(foamHeader())
     bmFile.write("\nconvertToMeters " + str(convertToMeters) + ";\n\nvertices\n(\n")
     
@@ -52,32 +47,35 @@ def write(filename, edges, vertices_coord, mean_res, convertToMeters, patchnames
         bmFile.write('    ({} {} {})\n'.format(*v))
     bmFile.write(");\nblocks\n(\n")
     
+    # Get the directions of the parallel edges
+    edgeDirections, blockDirections = getEdgeDirections(dependent_edges,block_print_out)
+
+    # Loop through all blocks and get resolution and grading and write to file
     NoCells = 0
     for bid, vl in enumerate(block_print_out):
         blockName = ''
         for name in reversed(vertexNames):
             if all( v in name[1] for v in vl ):
                 blockName = name[0]
+                
         for es, edgeSet in enumerate(dependent_edges):
             if edge(vl[0],vl[1]) in edgeSet:
-                ires = edgeRes[es]
-            if edge(vl[1],vl[2]) in edgeSet:
-                jres = edgeRes[es]
+                iedges = [(vl[e[0]],vl[e[1]]) for e in [(0,1),(3,2),(7,6),(4,5)]]
+                ires,igrad = getGrading(iedges,edgeSet,edgeInfo,blockDirections[bid][0])
+
+            if edge(vl[0],vl[3]) in edgeSet:
+                jedges = [(vl[e[0]],vl[e[1]]) for e in [(0,3),(1,2),(5,6),(4,7)]]
+                jres,jgrad = getGrading(jedges,edgeSet,edgeInfo,blockDirections[bid][1])
+
             if edge(vl[0],vl[4]) in edgeSet:
-                kres = edgeRes[es]
+                kedges = [(vl[e[0]],vl[e[1]]) for e in [(0,4),(1,5),(2,6),(3,7)]]
+                kres,kgrad = getGrading(kedges,edgeSet,edgeInfo,blockDirections[bid][2])
+                              
         NoCells += ires*jres*kres
-        gradStr = getGrading(vl, gradEdges, [])
         bmFile.write('    hex ({} {} {} {} {} {} {} {}) '.format(*vl) \
                    + blockName + ' ({} {} {}) '.format(ires,jres,kres)\
-                   + gradStr + '\n' )
-
-#    for f in face_info:
-#        for bid in offendingBlocks:
-#            if bid in face_info[f]['pos']:
-#                face_info[f]['pos'].pop(face_info[f]['pos'].index(bid))
-#            if bid in face_info[f]['neg']:
-#                face_info[f]['neg'].pop(face_info[f]['neg'].index(bid))
-
+                   + 'edgeGrading (' + igrad + jgrad + kgrad + '\n)\n' ) 
+        
     bmFile.write(');\n\npatches\n(\n')
     
     for pn in patchnames:
@@ -91,70 +89,119 @@ def write(filename, edges, vertices_coord, mean_res, convertToMeters, patchnames
             bmFile.write('    )\n')
             
     bmFile.write(');\n\nedges\n(\n')
-
     for pl in polyLines:
-        bmFile.write(pl)
-        
+        bmFile.write(pl)     
     bmFile.write(foamFileEnd())
     bmFile.close()
     return NoCells
 
 
-def preview(edges, vertices_coord, toShow, mean_res, polyLinesPoints, forcedEdges, gradEdges, lengths, objname, obj, disabled):
-    from . import previewMesh
-    import imp, bpy
-    imp.reload(previewMesh)
+def getEdgeDirections(dependent_edges, block_print_out):
+    edgeDirections = [set() for i in dependent_edges]               
+    positiveBlockEdges = [[(0,1),(3,2),(7,6),(4,5)],[(0,3),(1,2),(5,6),(4,7)],[(0,4),(1,5),(2,6),(3,7)]]
+    blockDirections = [[None,None,None] for i in block_print_out]
+    for i in range(100):
+        ready=True
+        for bd in blockDirections:
+            if None in bd:
+                ready=False
+        if ready:
+            break 
+        for bid, vl in enumerate(block_print_out):
+            for es, edgeSet in enumerate(dependent_edges):
+                for direction in range(3):
+                    if edge(vl[positiveBlockEdges[direction][0][0]],vl[positiveBlockEdges[direction][0][1]]) in edgeSet:     
+                        if not edgeDirections[es]:
+                            edgeDirections[es] = set([(vl[e[0]],vl[e[1]]) for e in positiveBlockEdges[direction]])
+                            blockDirections[bid][direction]=0
+                        else:
+                            simedges = edgeDirections[es].intersection([(vl[e[0]],vl[e[1]]) for e in positiveBlockEdges[direction]])
+                            if simedges:
+                                edgeDirections[es] |= set([(vl[e[0]],vl[e[1]]) for e in positiveBlockEdges[direction]])
+                                blockDirections[bid][direction]=0
+                            else:
+                                asimedges= set(edgeDirections[es]).intersection([(vl[e[1]],vl[e[0]]) for e in positiveBlockEdges[direction]])
+                                if asimedges:
+                                    edgeDirections[es] |= set([(vl[e[1]],vl[e[0]]) for e in positiveBlockEdges[direction]])
+                                    blockDirections[bid][direction]=1
+    return edgeDirections,blockDirections                    
+                    
+def getGrading(edges, dependent_edges, edgeInfo, changeDirection):
+    iedge = np.argmax([edgeInfo[(e[0],e[1])].time for e in dependent_edges])
+    depEdge = edgeInfo[(dependent_edges[iedge][0],dependent_edges[iedge][1])]
+    cells, grading = getGradingStr(depEdge,changeDirection)
+    gradingStr = ''   
+    if depEdge.copyAligned:
+        for edge in edges:
+            gradingStr += grading
+    else:
+        for edge in edges:
+            edgei = edgeInfo[edge[0],edge[1]]
+            cellse, grading = getGradingStr(edgei,False)
+            gradingStr += grading
+        
+    return cells, gradingStr
 
-    # Get the blockstructure, which edges that have the same #of cells, some info on face, and edges-in-use
-    logFile, block_print_out, dependent_edges, face_info, all_edges, faces_as_list_of_nodes = blockFinder(edges, vertices_coord, '','', disabled)
+def getGradingStr(edge, changeDirection):
+    if edge.dx1 and not (edge.exp1-1) < 1e-6:
+        n1=np.log(edge.maxdx/edge.dx1)/np.log(edge.exp1)
+        l1=edge.dx1*(1-edge.exp1**n1)/(1-edge.exp1)
+        ratio1 = edge.maxdx/edge.dx1
+    else:
+        n1=0
+        l1=0
+        ratio1=1
+        
+    if edge.dx2 and not (edge.exp2-1) < 1e-6:
+        n2=np.log(edge.maxdx/edge.dx2)/np.log(edge.exp2)
+        l2=edge.dx2*(1-edge.exp2**n2)/(1-edge.exp2) 
+        ratio2 = edge.maxdx/edge.dx2
+    else:
+        n2=0
+        l2=0
+        ratio2=1
+            
+    if l1 + l2 > edge.length:
 
-    # Set edges resolution
-    edgeRes = setEdgeRes(vertices_coord, dependent_edges, forcedEdges, mean_res, lengths)
+        maxdx = (edge.length*(1-edge.exp1)*(1-edge.exp2)-edge.dx1-edge.dx2+\
+                 edge.exp2*edge.dx1+edge.exp1*edge.dx2)/(edge.exp1+edge.exp2-2)
 
-    preview_verts = []
-    preview_edges = []
-    preview_faces = []
-    NoPreviewVertex = 0
-    NoCells = 0
-    for bid, vl in enumerate(block_print_out):
-        for es, edgeSet in enumerate(dependent_edges):
-            if edge(vl[0],vl[1]) in edgeSet:
-                ires = edgeRes[es]
-            if edge(vl[1],vl[2]) in edgeSet:
-                jres = edgeRes[es]
-            if edge(vl[0],vl[4]) in edgeSet:
-                kres = edgeRes[es]
-        NoCells += ires*jres*kres
-        gradList = []
-        gradStr = getGrading(vl, gradEdges, gradList)
-        showThisBlock = 1
-        for v in vl:
-            showThisBlock *= toShow[v]
-        if showThisBlock:
-            NoPreviewVertex, preview_verts, preview_edges, preview_faces = previewMesh.buildPreviewMesh(
-                   vl, vertices_coord, ires,jres,kres, 
-                   polyLinesPoints, gradList, NoPreviewVertex,
-                   preview_verts, preview_edges, preview_faces)
+        if edge.dx1 and not (edge.exp1-1) < 1e-6:
+            n1 = np.log(maxdx/edge.dx1)/np.log(edge.exp1)
+            l1 = edge.dx1*(1-edge.exp1**n1)/(1-edge.exp1)
+            ratio1 = maxdx/edge.dx1
+            
+        if edge.dx2 and not (edge.exp2-1) < 1e-6:
+            l2 = edge.length-l1
+            n2 = np.log(1-l2/edge.dx2*(1-edge.exp2))/np.log(edge.exp2)
+            ratio2 = maxdx/edge.dx2
+            
+    if edge.maxdx == 0:
+        edge.maxdx = 1
+    cells=np.round(((edge.length-l1-l2)/edge.maxdx))+n1+n2
 
-    mesh_data = bpy.data.meshes.new("previewmesh")
-    mesh_data.from_pydata(preview_verts, [], preview_faces)
-    mesh_data.update()
-    preview_obj = bpy.data.objects.new('PreviewMesh', mesh_data)
-    bpy.context.scene.objects.link(preview_obj)
-    preview_obj.select = True
-    bpy.context.scene.objects.active = bpy.data.objects['PreviewMesh']
-    preview_obj['swiftBlockObj'] = objname
-    bpy.context.scene.objects.active = preview_obj
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.remove_doubles(threshold=0.0001, use_unselected=True)
-    bpy.ops.object.mode_set(mode='OBJECT')
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='DESELECT')
-    bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
-    obj.hide = True
+    if cells < 1:
+        cells=1
+    if changeDirection:
+        n1,n2 = n2,n1
+        l1,l2 = l2,l1
+        ratio1,ratio2 = ratio2,ratio1
+        
+    l1s = l1/edge.length
+    n1s = n1/cells
+    l2s = l2/edge.length
+    n2s = n2/cells
     
-    return len(preview_obj.data.vertices), NoCells
+    lc = max(1-l1s-l2s,0)
+    nc = max(1-n1s-n2s,0)
+    
+    gradingStr='\n(\n ({:.6g} {:.6g} {:.6g}) ({:.6g} {:.6g} {:.6g}) ({:.6g} {:.6g} {:.6g}) '.format(
+            l1s,n1s,ratio1,\
+            lc,nc,1,\
+            l2s,n2s,1/ratio2) + '\n)'   
 
+    return int(np.round(cells)), gradingStr
+    
 def repairFaces(edges, vertices_coord, disabled, obj, removeInternal, createBoundary):
     import bpy
 
@@ -231,50 +278,6 @@ def couple_edges(dependent_edges):
                     return True
     return False
 
-def setEdgeRes(vertices_coord, dependent_edges, forcedEdges, mean_res, lengths):
-    edgeRes = []
-    for es in dependent_edges:
-        edgeLength = 0.
-        for e in es:
-            if edge(e[0],e[1]) in lengths[0]:
-                ind = lengths[0].index(edge(e[0],e[1]))
-                edgeLength += lengths[1][ind]
-            else:
-                print("Cannot find edge in lengths!")
-        edgeRes.append(max(1,round(edgeLength / (mean_res * len(es)))))
-        for fed in forcedEdges:
-            v0, v1 = fed[0][0],fed[0][1] 
-            if edge(v0,v1) in es:
-                edgeRes[-1] = fed[1]
-    return edgeRes
-    
-def getGrading(vl, gradEdges, listOfGrading):
-    edges = []
-    grading = []
-    gradList = []
-    gradStr = "edgeGrading ("
-    for e in gradEdges: # split up in two lists
-        edges.append(e[0])
-        grading.append(e[1])
-       
-    def lookupGrad(v0,v1,edges,grading):
-        if [v0,v1] in edges:
-            return grading[edges.index([v0,v1])]
-        else:
-            grad = grading[edges.index([v1,v0])]
-            if grad < 0:
-                return grad # double grading feature
-            else:
-                return 1.0/grad
-
-    edgeOrder = [[0,1], [3,2], [7,6], [4,5], [0,3], [1,2], [5,6], [4,7], [0,4], [1,5], [2,6], [3,7]]
-    for e in edgeOrder:
-        v0 = vl[e[0]]
-        v1 = vl[e[1]]
-        gradList.append(lookupGrad(v0,v1, edges,grading))
-        gradStr += " " + str(lookupGrad(v0,v1, edges,grading))
-        listOfGrading += [lookupGrad(v0,v1, edges,grading)]
-    return gradStr + ")"
 
 
 def findFace(faces, vl):
@@ -559,6 +562,9 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
             i_edges = [edge(vl[0],vl[1]), edge(vl[2],vl[3]), edge(vl[4],vl[5]), edge(vl[6],vl[7])]
             j_edges = [edge(vl[1],vl[2]), edge(vl[3],vl[0]), edge(vl[5],vl[6]), edge(vl[7],vl[4])]
             k_edges = [edge(vl[0],vl[4]), edge(vl[1],vl[5]), edge(vl[2],vl[6]), edge(vl[3],vl[7])]
+#            i_edges = [[vl[0],vl[1]], [vl[2],vl[3]], [vl[4],vl[5]], [vl[6],vl[7]]]
+#            j_edges = [[vl[1],vl[2]], [vl[3],vl[0]], [vl[5],vl[6]], [vl[7],vl[4]]]
+#            k_edges = [[vl[0],vl[4]], [vl[1],vl[5]], [vl[2],vl[6]], [vl[3],vl[7]]]
             dependent_edges.append(i_edges) #these 4 edges have the same resolution
             dependent_edges.append(j_edges) #these 4 edges have the same resolution
             dependent_edges.append(k_edges) #these 4 edges have the same resolution

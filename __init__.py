@@ -2,7 +2,7 @@ bl_info = {
     "name": "SwiftBlock",
     "author": "Karl-Johan Nogenmyr",
     "version": (0, 1),
-    "blender": (2, 6, 6),
+    "blender": (2, 7, 5),
     "api": 44000,
     "location": "Tool Shelf",
     "description": "Writes block geometry as blockMeshDict file",
@@ -17,6 +17,8 @@ bl_info = {
 #----------------------------------------------------------
 import bpy
 from bpy.props import *
+import bmesh
+import time
 
 def getPolyLines(verts, edges, obj):
     scn = bpy.context.scene
@@ -166,22 +168,6 @@ def initProperties():
         default = 1.0,
         min = 0.)
         
-    bpy.types.Scene.resFloat = FloatProperty(
-        name = "Resolution", 
-        description = "The average spatial resolution of generated mesh in meter",
-        default = 1.0,
-        min = 0)
- 
-    bpy.types.Scene.resForce = IntProperty(
-        name = "# cells", 
-        description = "For forcing the number of cells on edge (0 disables)",
-        default = 0,
-        min = 0)
- 
-    bpy.types.Scene.grading = FloatProperty(
-        name = "Grading", 
-        description = "The size ratio of first and last cell on edge",
-        default = 1.0)
  
     bpy.types.Scene.whichCell = EnumProperty(
         items = [('Coarse', 'Coarse', 'Let the coarse cells have the target resolution'), 
@@ -227,7 +213,47 @@ def initProperties():
         name = "Create boundary faces", 
         description = "Should boundary faces be created?",
         default = False)
+    
+    bpy.types.Scene.dx1 = FloatProperty(
+        name = "dx1", 
+        description = "First cell size on first end",
+        default = 0,
+        min = 0)    
+
+    bpy.types.Scene.dx2 = FloatProperty(
+        name = "dx2", 
+        description = "First cell size on second end",
+        default = 0,
+        min = 0)  
         
+    bpy.types.Scene.exp1 = FloatProperty(
+        name = "exp1", 
+        description = "Expansion ratio on first end",
+        default = 1,
+        min = 0)    
+
+    bpy.types.Scene.exp2 = FloatProperty(
+        name = "exp2", 
+        description = "Expansion ratio on second end",
+        default = 1,
+        min = 0)  
+        
+    bpy.types.Scene.cells = IntProperty(
+        name = "cells", 
+        description = "Number of cells",
+        default = 0,
+        min = 0)
+        
+    bpy.types.Scene.maxdx = FloatProperty(
+        name = "max dx", 
+        description = "Maximum cell size",
+        default = 1,
+        min = 1e-6)  
+        
+    bpy.types.Scene.copyAligned = BoolProperty(
+        name = "Copy to parallel edges", 
+        description = "Copy edge properties to parallel edges",
+        default = False)
     return
 
 #
@@ -243,7 +269,7 @@ class UIPanel(bpy.types.Panel):
         layout = self.layout
         scn = context.scene
         obj = context.active_object
-        settings = context.tool_settings
+#        settings = context.tool_settings
         try:
             obj['swiftblock']
         except:
@@ -258,10 +284,12 @@ class UIPanel(bpy.types.Panel):
             layout.operator("create.preview")
             layout.operator("find.broken")
             layout.prop(scn, 'ctmFloat')
-            layout.prop(scn, 'resFloat')
+#            layout.prop(scn, 'resFloat')
             box = layout.box()
             box = box.column()
-            box.label(text='Edge settings')
+            
+            box.label(text='Edge settings')            
+            
             box.prop(scn, 'setEdges')
             if scn.setEdges:
                 try:
@@ -278,16 +306,24 @@ class UIPanel(bpy.types.Panel):
                 except:
                     box.prop(scn, 'geoobjName')
 
+            box = box.column()
             split = box.split()
             col = split.column()
-            col.prop(scn, 'resForce')
-            col.prop(scn, 'grading')
-            col.operator("flip.edge")
+            col.label(text='edge1')
+            col.prop(scn, 'dx1')
+            col.prop(scn, 'exp1')
             col = split.column()
-            col.operator("set.edgeres")
-            col.row().prop(scn,"whichCell", expand=True)
-            col.operator("set.grading")
-            col.operator("show.edgeinfo", text="Edge settings")
+            col.label(text='edge2')
+            col.prop(scn, 'dx2')
+            col.prop(scn, 'exp2')
+#            box.prop(scn, 'cells')
+            box.prop(scn, 'maxdx')
+            split = box.split()
+            col = split.column()
+            box.prop(scn, 'copyAligned')
+            col.operator('set.edges')
+            col = split.column()
+            col.operator('get.edges')
 
             box = layout.box()
             box = box.column()
@@ -337,79 +373,6 @@ class UIPanel(bpy.types.Panel):
                 sub.operator("object.vertex_group_select", text="Select")
                 sub.operator("object.vertex_group_deselect", text="Deselect")
 
-class OBJECT_OT_edgeInfo(bpy.types.Operator):
-    '''Show/edit settings for one selected edge''' 
-    bl_idname = "show.edgeinfo"
-    bl_label = "Show and edit settings for selected edge"
- 
-    def execute(self, context):
-        bpy.ops.object.mode_set(mode='OBJECT')
-        obj = context.active_object
-        scn = context.scene
-        for e in obj.data.edges:
-            if e.select:
-                if scn.snapping == 'yes':
-                    e.use_edge_sharp = False
-                else:
-                    e.use_edge_sharp = True
-                    
-        bpy.ops.set.edgeres()  
-        bpy.ops.set.grading()
-        bpy.ops.object.mode_set(mode='EDIT')
-        return {'FINISHED'}
- 
-    def invoke(self, context, event):
-        wm = context.window_manager
-        obj = context.active_object
-        scn = context.scene
-        bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.ops.object.mode_set(mode='EDIT')
-        NoSelected = 0
-        for e in obj.data.edges:
-            if e.select:
-                NoSelected += 1
-                if e.use_seam:
-                    scn.whichCell = 'Fine'
-                else:
-                    scn.whichCell = 'Coarse'
-
-                if e.bevel_weight >= 0.001:
-                    scn.resForce = obj['bevelToResMap'][str(round(e.bevel_weight*100))]
-                else:
-                    scn.resForce = 0
-                    
-                if e.crease == 0:
-                    scn.grading = 1
-                else:
-                    scn.grading = obj['creaseToGradMap'][str(round(e.crease*100))]
-                
-                if e.use_edge_sharp:
-                    scn.snapping = 'no'
-                else:
-                    scn.snapping = 'yes'
-        if NoSelected >= 2:
-            self.report({'INFO'}, "More than one edge selected!")        
-            return{'CANCELLED'}
-        elif NoSelected == 0:
-            self.report({'INFO'}, "Please select an edge!")        
-            return{'CANCELLED'}
-        context.window_manager.invoke_props_dialog(self, width=400)
-        return {'RUNNING_MODAL'}  
- 
-    def draw(self, context):
-        scn = context.scene
-        split = self.layout.split(percentage=0.5)
-        col = split.column()
-        col.label("Define polyLine:")
-        col.label("Grading:")
-        col.label("Which cell gets target res:")
-        col.label("Forced resolution:")
-        col = split.column()
-
-        col.row().prop(scn, "snapping", expand=True)
-        col.prop(scn, "grading")
-        col.row().prop(scn,"whichCell", expand=True)
-        col.prop(scn, "resForce")
 
 class OBJECT_OT_nosnapEdge(bpy.types.Operator):
     '''Force selected edge(s) straight or curved'''
@@ -532,28 +495,7 @@ set grading on several edges which are initially misaligned'''
         bpy.ops.object.mode_set(mode='EDIT')
         return {'FINISHED'}
     
-class OBJECT_OT_deletePreview(bpy.types.Operator):
-    '''Delete preview mesh object'''
-    bl_idname = "delete.preview"
-    bl_label = "Delete preview mesh"
 
-    def execute(self, context):
-        bpy.ops.object.mode_set(mode='OBJECT')
-        name = ''
-        for obj in bpy.data.objects:
-            try:
-                name = obj['swiftBlockObj']
-            except:
-                obj.select = False
-        bpy.ops.object.delete()
-        try:        
-            obj = bpy.data.objects[name]
-            obj.select = True
-            obj.hide = False
-            bpy.context.scene.objects.active = obj
-        except:
-            pass
-        return {'FINISHED'}
     
 class OBJECT_OT_ChangeGeoObj(bpy.types.Operator):
     '''Click to change object'''
@@ -572,11 +514,22 @@ class OBJECT_OT_Enable(bpy.types.Operator):
     def execute(self, context):
         obj = context.active_object
         obj['swiftblock'] = True
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bm.edges.layers.float.new("dx1")
+        bm.edges.layers.float.new("dx2")
+        bm.edges.layers.float.new("exp1")
+        bm.edges.layers.float.new("exp2")
+        bm.edges.layers.float.new("maxdx")
+        bm.edges.layers.int.new("cells")
+        bm.edges.layers.float.new("time")
+        bm.edges.layers.int.new("copyAligned")
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bm.to_mesh(obj.data)
         bpy.context.tool_settings.use_mesh_automerge = True
 
         bpy.ops.object.mode_set(mode='OBJECT')
-        obj.data.use_customdata_edge_crease = True
-        obj.data.use_customdata_edge_bevel = True
         bpy.ops.object.material_slot_remove()
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_all(action='DESELECT')
@@ -595,6 +548,7 @@ class OBJECT_OT_Enable(bpy.types.Operator):
         bpy.ops.object.material_slot_assign()
         bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.object.editmode_toggle()  
+        bpy.ops.object.editmode_toggle()
         return{'FINISHED'}
 
 class OBJECT_OT_SetPatchName(bpy.types.Operator):
@@ -630,150 +584,110 @@ class OBJECT_OT_SetPatchName(bpy.types.Operator):
             self.report({'INFO'}, "No faces selected!")        
             return{'CANCELLED'}
         return {'FINISHED'}
-
-class OBJECT_OT_SetEdgeRes(bpy.types.Operator):
-    '''Force a resolution on selected edge(s)'''
-    bl_idname = "set.edgeres"
-    bl_label = "Force resolution"
-# This very messy way to keep track of resolution is needed as we have to store the info
-# in edges native properties. Here bevel_weight is used which is a float in range [0,1]
-# The float can store approx. 100 different values. By mult. by 100, int in range [0,100]
-# is achieved. This int is mapped to user-set resolution with the 'bevelToResMap'
-
-    def execute(self, context):
+        
+class OBJECT_OT_SetEdge(bpy.types.Operator):
+    '''Sets edge(s) properties'''
+    bl_idname = "set.edges"
+    bl_label = "Set edges"
+    def execute(self,context):
         scn = context.scene
         obj = context.active_object
-        res = scn.resForce
-        bpy.ops.object.mode_set(mode='OBJECT')
-        NoSelect = 0
-        for e in obj.data.edges:
-            if e.select == True:
-                NoSelect += 1
-        if not NoSelect:
-            self.report({'INFO'}, "No edge(s) selected!")
-            bpy.ops.object.mode_set(mode='EDIT')
-            return{'CANCELLED'}
-            
-        try:
-            obj['bevelToResMap']
-        except:
-            obj['bevelToResMap']= {}
-
-        existingRes = set()
-        for e in obj.data.edges:
-            if str(round(e.bevel_weight*100)) in obj['bevelToResMap']:
-                existingRes.add(round(e.bevel_weight*100))
-            else:
-                e.bevel_weight = 0 #remove bevel if no entry in bevelToResMap was found
-
-        mapEntryToRemove = set()
-        for entry in obj['bevelToResMap']:
-            if not int(entry) in existingRes:
-                mapEntryToRemove.add(entry)
-
-        for entry in mapEntryToRemove:
-            obj['bevelToResMap'].pop(entry)
-
-        if res == 0:
-            for e in obj.data.edges:
-                if e.select == True:
-                     e.bevel_weight = 0
-            bpy.ops.object.mode_set(mode='EDIT')
-            return {'FINISHED'}
-
-        bevelToResMap = obj['bevelToResMap']
-        foundRes = False
-        for bevelInt in bevelToResMap:
-            if bevelToResMap[bevelInt] == res:  # previously used resolution - reuse!
-                bevel = int(bevelInt)
-                foundRes = True
-        if not foundRes:
-            allEntries = set(range(1,101)) #all possible bevel entries
-            newEntry = min(list(allEntries.difference(existingRes)))
-            bevelToResMap[str(newEntry)] = res  # create a new entry in map
-            bevel = newEntry
-        for e in obj.data.edges:
-            if e.select == True:
-                 e.bevel_weight = bevel/100.
         bpy.ops.object.mode_set(mode='EDIT')
-        return {'FINISHED'}
+        bm = bmesh.from_edit_mesh(obj.data)
+        dx1l = bm.edges.layers.float.get('dx1')
+        dx2l = bm.edges.layers.float.get('dx2')
+        exp1l = bm.edges.layers.float.get('exp1')
+        exp2l = bm.edges.layers.float.get('exp2')
+        cellsl = bm.edges.layers.int.get('cells')
+        maxdxl = bm.edges.layers.float.get('maxdx')
+        timel = bm.edges.layers.float.get('time')
+        copyAlignedl = bm.edges.layers.int.get('copyAligned')
+        bm.edges.ensure_lookup_table()
 
-
-class OBJECT_OT_SetGrading(bpy.types.Operator):
-    '''Set grading on selected edge(s). Use Ctrl-Alt-Space to find out orientation of each edge. \
-Cells will be coarser in the edge's z-direction for grading > 1'''
-    bl_idname = "set.grading"
-    bl_label = "Set grading"
-# This very messy way to keep track of grading is needed as we have to store the info
-# in edges native properties. Here crease is used which is a float in range [0,1]
-# The float can store approx. 100 different values. By mult. by 100, int in range [0,100]
-# is achieved. This int is mapped to user-set grading with the 'creaseToGradMap'
-
-    def execute(self, context):
-        scn = context.scene
-        obj = context.active_object
-        grad = scn.grading
-        if scn.whichCell == 'Fine':
-            use_seam = True
+        anyselected = False
+        for e in bm.edges:
+            if e.select == True:
+                e[dx1l] = scn.dx1
+                e[dx2l] = scn.dx2
+                e[exp1l] = scn.exp1
+                e[exp2l] = scn.exp2
+                e[maxdxl] = scn.maxdx
+                e[cellsl] = scn.cells
+                # blender float cannot store very big floats
+                e[timel]=time.time()-1437000000
+                e[copyAlignedl]=scn.copyAligned
+                anyselected = True
+        if anyselected:
+            bmesh.update_edit_mesh(obj.data)
         else:
-            use_seam = False
-            
-        bpy.ops.object.mode_set(mode='OBJECT')
-        NoSelect = 0
-        for e in obj.data.edges:
-            if e.select == True:
-                NoSelect += 1
-        if not NoSelect:
             self.report({'INFO'}, "No edge(s) selected!")
-            bpy.ops.object.mode_set(mode='EDIT')
             return{'CANCELLED'}
-
-        try:
-            obj['creaseToGradMap']
-        except:
-            obj['creaseToGradMap']= {}
-        obj.data.show_edge_crease = False # could be set true to show which edges have grading
-        if grad == 1:
-            for e in obj.data.edges:
-                if e.select == True:
-                     e.crease = 0
-            bpy.ops.object.mode_set(mode='EDIT')
-            return {'FINISHED'}
-
-        existingGrad = set()
-        for e in obj.data.edges:
-            if str(round(e.crease*100)) in obj['creaseToGradMap']:
-                existingGrad.add(round(e.crease*100))
-            else:
-                e.crease = 0 #remove bevel if no entry in bevelToResMap was found
-
-        mapEntryToRemove = set()
-        for entry in obj['creaseToGradMap']:
-            if not int(entry) in existingGrad:
-                mapEntryToRemove.add(entry)
-
-        for entry in mapEntryToRemove:
-            obj['creaseToGradMap'].pop(entry)
-
-        creaseToGradMap = obj['creaseToGradMap']
-        foundGrad = False
-        for creaseInt in creaseToGradMap:
-            if creaseToGradMap[creaseInt] == grad:  # previously used grading - reuse!
-                crease = int(creaseInt)
-                foundGrad = True
-        if not foundGrad:
-            allEntries = set(range(1,101)) #all possible bevel entries
-            newEntry = min(list(allEntries.difference(existingGrad)))
-            creaseToGradMap[str(newEntry)] = grad  # create a new entry in map
-            crease = newEntry
-        for e in obj.data.edges:
-            if e.select == True:
-                 e.crease = crease/100.
-                 e.use_seam = use_seam
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.ops.object.mode_set(mode='EDIT')
+        printedgeinfo()
         return {'FINISHED'}
+        
+def printedgeinfo():
+    obj = bpy.context.active_object
+    bpy.ops.object.mode_set(mode='EDIT')
+    bm = bmesh.from_edit_mesh(obj.data)
+    dx1l = bm.edges.layers.float.get('dx1')
+    dx2l = bm.edges.layers.float.get('dx2')
+    exp1l = bm.edges.layers.float.get('exp1')
+    exp2l = bm.edges.layers.float.get('exp2')
+    cellsl = bm.edges.layers.int.get('cells')
+    maxdxl = bm.edges.layers.float.get('maxdx')
+    timel = bm.edges.layers.float.get('time')
+    bm.edges.ensure_lookup_table()
+    string = ''
+    print('{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>12}'.format(\
+    'eidx','ver1','ver2','dx1','dx2','grow1','grow2','maxdx','time')) 
+    for idx,e in enumerate(bm.edges):
+        string += '{:6}{:6}{:6}{:{numbers}.{decimals}g}{:{numbers}.{decimals}g}\
+{:{numbers}.{decimals}g}{:{numbers}.{decimals}g}\
+{:{numbers}.{decimals}g}{:12.0f}'.format(\
+                  idx,e.verts[0].index,e.verts[1].index,e[dx1l],e[dx2l],\
+                  e[exp1l],e[exp2l],e[maxdxl],e[timel],\
+                  numbers=6,decimals=2)+'\n'
+    print(string)    
+    
+    
+class OBJECT_OT_GetEdge(bpy.types.Operator):
+    '''Get edge(s) properties'''
+    bl_idname = "get.edges"
+    bl_label = "Get edges"
+    def execute(self,context):
+        scn = context.scene
+        obj = context.active_object
+
+        bpy.ops.object.mode_set(mode='EDIT')
+        bm = bmesh.from_edit_mesh(obj.data)
+        dx1l = bm.edges.layers.float.get('dx1')
+        dx2l = bm.edges.layers.float.get('dx2')
+        exp1l = bm.edges.layers.float.get('exp1')
+        exp2l = bm.edges.layers.float.get('exp2')
+        cellsl = bm.edges.layers.int.get('cells')
+        maxdxl = bm.edges.layers.float.get('maxdx')
+        copyAlignedl = bm.edges.layers.int.get('copyAligned')
+        bm.edges.ensure_lookup_table()
+        anyselected = False
+        for e in bm.edges:
+            if e.select == True:
+                scn.dx1=e[dx1l]
+                scn.dx2=e[dx2l]
+                scn.exp1=e[exp1l]
+                scn.exp2=e[exp2l]
+                scn.cells=e[cellsl]
+                scn.maxdx=e[maxdxl]
+                scn.copyAligned=e[copyAlignedl]
+                anyselected = True
+                break
+        if anyselected:
+            bmesh.update_edit_mesh(obj.data)
+        else:
+            self.report({'INFO'}, "No edge(s) selected!")
+            return{'CANCELLED'}
+        return {'FINISHED'}    
+        
+
 
 
 class OBJECT_OT_FindBroken(bpy.types.Operator):
@@ -861,7 +775,6 @@ class OBJECT_OT_RepairFaces(bpy.types.Operator):
                 bpy.ops.object.vertex_group_set_active(group=group.name)
                 bpy.ops.object.vertex_group_select()
                 bpy.ops.object.mode_set(mode='OBJECT')
-                vlist = []
                 for v in obj.data.vertices:
                     if v.select == True:
                         disabled += [v.index]
@@ -917,137 +830,60 @@ class OBJECT_OT_createPreview(bpy.types.Operator):
     bl_label = "Preview"
     
     def execute(self, context):
-        if context.scene.setEdges:
-            try:
-                bpy.data.objects[context.scene.geoobjName]
-            except:
-                self.report({'INFO'}, "Cannot find object for edges!")        
-                return{'CANCELLED'}
-        import locale
-        from . import utils
-        import imp, math
-        imp.reload(utils)
-        from . import blender_utils
-        locale.setlocale(locale.LC_ALL, '')
-        scn = context.scene
-        obj = context.active_object
-
-        bpy.ops.object.mode_set(mode='OBJECT') #update
-        bpy.ops.object.mode_set(mode='EDIT')
-
-
-        verts = list(blender_utils.vertices_from_mesh(obj))
-        edges = list(blender_utils.edges_from_mesh(obj))
-
-        toShow = [0 for i in range(len(verts))]  # A block is previewed if all vertices are selected
-        allOff = True
-        for vid in range(len(verts)):
-            if obj.data.vertices[vid].select:
-                toShow[vid] = 1
-                allOff = False
-        if allOff: # All vertices were unselected - proceed with previewing all blocks
-            toShow = [1 for i in range(len(verts))]
-
-        disabled = []
-        bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(True,False,False)")
-        for group in obj.vertex_groups:
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='DESELECT')
-            if group.name == 'disabled':
-                bpy.ops.object.vertex_group_set_active(group=group.name)
-                bpy.ops.object.vertex_group_select()
-                bpy.ops.object.mode_set(mode='OBJECT')
-                vlist = []
-                for v in obj.data.vertices:
-                    if v.select == True:
-                        disabled += [v.index]
-
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.mesh.select_all(action='DESELECT')
-        bpy.ops.object.mode_set(mode='OBJECT')
-        
-        if not allOff:
-            for vid, v in enumerate(obj.data.vertices): #restore selection
-                if toShow[vid]:
-                    v.select = True
-
-        forcedEdges = []
-        for e in obj.data.edges:
-            if e.bevel_weight >= 0.001:
-                N = obj['bevelToResMap'][str(round(e.bevel_weight*100))]
-                forcedEdges.append([[e.vertices[0],e.vertices[1]], N])
-
-        gradedEdges = []
-        for e in obj.data.edges:
-            if e.crease == 0:
-                grad = 1
-            else:
-                grad = obj['creaseToGradMap'][str(round(e.crease*100))]
-            gradedEdges.append([[e.vertices[0],e.vertices[1]], grad, e.use_seam])
-
-        bpy.ops.object.mode_set(mode='OBJECT')
-        obj.select = False
-        if scn.setEdges:
-            polyLines, polyLinesPoints, lengths = getPolyLines(verts, edges, obj)
-        else:
-            polyLinesPoints = []
-            lengths = [[], []]
-            
-        dx0 = scn.resFloat
-        effective_lengths = [[], []]
-        for e in edges:
-            if e in lengths[0]:
-                ind = lengths[0].index(e)
-                length = lengths[1][ind]
-            elif [e[0],e[1]] in lengths[0]:
-                ind = lengths[0].index([e[0],e[1]])
-                length = lengths[1][ind]
-            else:
-                length = (verts[e[0]] - verts[e[1]]).magnitude
-
-            if length < 1e-6:
-                self.report({'INFO'}, "Zero length edge detected, check block structure!")        
-                return{'FINISHED'}
-                
-            for ge in gradedEdges:
-                if ge[0] == e or ge[0] == [e[0],e[1]]:
-                    grad = ge[1]
-                    fine = ge[2]
-                    break
-            if fine: #Fine cells should match the target resolution, this means fewer total cells
-                if grad > 1.00001:
-                    if grad*dx0/length < 1:
-                        length *= (math.log(grad)/(math.log(1-dx0/length)-math.log(1-grad*dx0/length)) +1) * dx0/length
-                elif grad < 0.99999:
-                    if dx0/length < 1:
-                        length /= (math.log(grad)/(math.log(1-dx0/length)-math.log(1-grad*dx0/length)) +1) * dx0/length
-                else:
-                    pass
-            else: #Coarse cells should match the target resolution, this means more total cells
-                if grad > 1.00001:
-                    if dx0/length < 1:
-                        length *= (math.log(grad)/(math.log(1-dx0/(length*grad))-math.log(1-dx0/length)) +1) * dx0/length
-                elif grad < 0.99999:
-                    if dx0/(length*grad) < 1:
-                        length /= (math.log(grad)/(math.log(1-dx0/(length*grad))-math.log(1-dx0/length)) +1) * dx0/length
-                else:
-                    pass
-        # Now we have a final effective edge length. Lets store!
-            effective_lengths[0].append([min(e[0],e[1]), max(e[0],e[1])]) # write out sorted
-            effective_lengths[1].append(length) 
-
-        size, NoCells = utils.preview(edges, verts, toShow, scn.resFloat/scn.ctmFloat, 
-                polyLinesPoints, forcedEdges, gradedEdges, effective_lengths, obj.name, obj, disabled)
-
-        cellstr = locale.format("%d", NoCells, grouping=True)
-        if not size:
-            bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(True,False,False)")
-            self.report({'INFO'}, "Preview mesh is empty. Too few vertices selected, or broken block structure!")
-        else:
-            self.report({'INFO'}, "Cells in mesh: " + cellstr)
-
+        from . import preview
+        import imp
+        imp.reload(preview)
+        mesh = preview.PreviewMesh()
+        cells = writeBMD(mesh.tempdir+'/constant/polyMesh/blockMeshDict')
+        mesh.generateMesh()
+        bpy.ops.object.editmode_toggle()
+        bpy.ops.object.editmode_toggle()
+        bpy.ops.mesh.select_all(action='TOGGLE')
+        self.report({'INFO'}, "Cells in mesh: " + str(cells))
         return{'FINISHED'}
 
+ 
+class OBJECT_OT_deletePreview(bpy.types.Operator):
+    '''Delete preview mesh object'''
+    bl_idname = "delete.preview"
+    bl_label = "Delete preview mesh"
+
+    def execute(self, context):
+        bpy.ops.object.mode_set(mode='OBJECT')
+        name = ''
+        for obj in bpy.data.objects:
+            try:
+                name = obj['swiftBlockObj']
+            except:
+                obj.select = False
+        bpy.ops.object.delete()
+        try:        
+            obj = bpy.data.objects[name]
+            obj.select = True
+            obj.hide = False
+            bpy.context.scene.objects.active = obj
+        except:
+            pass
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(type="EDGE")
+        bpy.ops.mesh.select_all(action='TOGGLE')
+        return {'FINISHED'} 
+ 
+ 
+class EdgeInfo:
+    edge=None
+    v1=None
+    v2=None
+    dx1=None
+    dx2=None
+    exp1=None
+    exp2=None
+    maxdx=None
+    cells=None
+    length=None
+    time=None
+    copyAligned=None
+    
 class OBJECT_OT_writeBMD(bpy.types.Operator):
     '''Writes out a blockMeshDict file for the currently selected object'''
     bl_idname = "write.bmdfile"
@@ -1095,150 +931,141 @@ class OBJECT_OT_writeBMD(bpy.types.Operator):
         return {'RUNNING_MODAL'}
     
     def execute(self, context):
-        import locale
-        from . import utils
-        import imp, math
-        imp.reload(utils)
-        from . import blender_utils
-        locale.setlocale(locale.LC_ALL, '')
-
-        scn = context.scene
-        obj = context.active_object
-        patchnames = list()
-        patchtypes = list()
-        patchverts = list()
-        patches = list()
-        obj['path'] = self.filepath
-
-        bpy.ops.object.mode_set(mode='OBJECT')   # Refresh mesh object
-        bpy.ops.object.mode_set(mode='EDIT')
-
-        bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(True,False,False)")
-        vertexNames = []
-        disabled = []
-        for group in obj.vertex_groups:
-            bpy.ops.object.mode_set(mode='EDIT')
-            bpy.ops.mesh.select_all(action='DESELECT')
-            if not group.name[0] == '_':
-                bpy.ops.object.vertex_group_set_active(group=group.name)
-                bpy.ops.object.vertex_group_select()
-                bpy.ops.object.mode_set(mode='OBJECT')
-                vlist = []
-                for v in obj.data.vertices:
-                    if v.select == True:
-                        vlist += [v.index]
-                if vlist:
-                    if group.name == 'disabled':
-                        disabled = vlist
-                    else:
-                        vertexNames.append([group.name, vlist])
-
-        bpy.ops.object.mode_set(mode='EDIT')
-        for mid, m in enumerate(obj.data.materials):
-            bpy.ops.mesh.select_all(action='DESELECT')
-            obj.active_material_index = mid
-            bpy.ops.object.material_slot_select()
-            bpy.ops.object.mode_set(mode='OBJECT')
-            bpy.ops.object.mode_set(mode='EDIT')
-            faces = obj.data.polygons
-            for f in faces:
-                if f.select and f.material_index == mid:
-                    if m.name in patchnames:
-                        ind = patchnames.index(m.name)
-                        patchverts[ind].append(list(f.vertices))
-                    else:
-                        patchnames.append(m.name)
-                        patchtypes.append(m['patchtype'])
-                        patchverts.append([list(f.vertices)])
-                        
-        for ind,pt in enumerate(patchtypes):
-            patches.append([pt])
-            patches[ind].append(patchnames[ind])
-            patches[ind].append(patchverts[ind])
-
-        verts = list(blender_utils.vertices_from_mesh(obj))
-        edges = list(blender_utils.edges_from_mesh(obj))
-
-
-        forcedEdges = []
-        for e in obj.data.edges:
-            if e.bevel_weight >= 0.001:
-                N = obj['bevelToResMap'][str(round(e.bevel_weight*100))]
-                forcedEdges.append([[e.vertices[0],e.vertices[1]], N])
-
-        gradedEdges = []
-        for e in obj.data.edges:
-            if e.crease == 0:
-                grad = 1
-            else:
-                grad = obj['creaseToGradMap'][str(round(e.crease*100))]
-            gradedEdges.append([[e.vertices[0],e.vertices[1]], grad, e.use_seam])
-
-        bpy.ops.object.mode_set(mode='OBJECT')
-        obj.select = False
-        if scn.setEdges:
-            polyLines, polyLinesPoints, lengths = getPolyLines(verts, edges, obj)
-        else:
-            polyLines = ''
-            lengths = [[], []]
-
-        dx0 = scn.resFloat
-        effective_lengths = [[], []]
-        for e in edges:
-            if e in lengths[0]:
-                ind = lengths[0].index(e)
-                length = lengths[1][ind]
-            elif [e[0],e[1]] in lengths[0]:
-                ind = lengths[0].index([e[0],e[1]])
-                length = lengths[1][ind]
-            else:
-                length = (verts[e[0]] - verts[e[1]]).magnitude
-
-            if length < 1e-6:
-                self.report({'INFO'}, "Zero length edge detected, check block structure!")        
-                return{'FINISHED'}
-                
-            for ge in gradedEdges:
-                if ge[0] == e or ge[0] == [e[0],e[1]]:
-                    grad = ge[1]
-                    fine = ge[2]
-                    break
-            if fine: #Fine cells should match the target resolution, this means fewer total cells
-                if grad > 1.00001:
-                    if grad*dx0/length < 1:
-                        length *= (math.log(grad)/(math.log(1-dx0/length)-math.log(1-grad*dx0/length)) +1) * dx0/length
-                elif grad < 0.99999:
-                    if dx0/length < 1:
-                        length /= (math.log(grad)/(math.log(1-dx0/length)-math.log(1-grad*dx0/length)) +1) * dx0/length
-                else:
-                    pass
-            else: #Coarse cells should match the target resolution, this means more total cells
-                if grad > 1.00001:
-                    if dx0/length < 1:
-                        length *= (math.log(grad)/(math.log(1-dx0/(length*grad))-math.log(1-dx0/length)) +1) * dx0/length
-                elif grad < 0.99999:
-                    if dx0/(length*grad) < 1:
-                        length /= (math.log(grad)/(math.log(1-dx0/(length*grad))-math.log(1-dx0/length)) +1) * dx0/length
-                else:
-                    pass
-        # Now we have a final effective edge length. Lets store!
-            effective_lengths[0].append([min(e[0],e[1]), max(e[0],e[1])]) # write out sorted
-            effective_lengths[1].append(length) 
-
-        obj.select = True
-        bpy.context.scene.objects.active = obj
-
-        NoCells = utils.write(self.filepath, edges, verts, 
-            scn.resFloat/scn.ctmFloat, scn.ctmFloat, 
-            patches, polyLines, forcedEdges, gradedEdges, 
-            effective_lengths, vertexNames, disabled, self.logging)
-
-        cellstr = locale.format("%d", NoCells, grouping=True)
-        self.report({'INFO'}, "Cells in mesh: " + cellstr)
-
+        cells = writeBMD(self.filepath)
+        self.report({'INFO'}, "Cells in mesh: " + str(cells))
         return{'FINISHED'}
 
 
+
+def writeBMD(filepath):
+    import locale
+    from . import utils
+    import imp
+    imp.reload(utils)
+    from . import blender_utils
+    locale.setlocale(locale.LC_ALL, '')
+
+    scn = bpy.context.scene
+    obj = bpy.context.active_object
+    patchnames = list()
+    patchtypes = list()
+    patchverts = list()
+    patches = list()
+    
+    bpy.ops.object.mode_set(mode='OBJECT')   # Refresh mesh object
+    bpy.ops.object.mode_set(mode='EDIT')
+
+    bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(True,False,False)")
+    vertexNames = []
+    disabled = []
+    for group in obj.vertex_groups:
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_all(action='DESELECT')
+        if not group.name[0] == '_':
+            bpy.ops.object.vertex_group_set_active(group=group.name)
+            bpy.ops.object.vertex_group_select()
+            bpy.ops.object.mode_set(mode='OBJECT')
+            vlist = []
+            for v in obj.data.vertices:
+                if v.select == True:
+                    vlist += [v.index]
+            if vlist:
+                if group.name == 'disabled':
+                    disabled = vlist
+                else:
+                    vertexNames.append([group.name, vlist])
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    for mid, m in enumerate(obj.data.materials):
+        bpy.ops.mesh.select_all(action='DESELECT')
+        obj.active_material_index = mid
+        bpy.ops.object.material_slot_select()
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode='EDIT')
+        faces = obj.data.polygons
+        for f in faces:
+            if f.select and f.material_index == mid:
+                if m.name in patchnames:
+                    ind = patchnames.index(m.name)
+                    patchverts[ind].append(list(f.vertices))
+                else:
+                    patchnames.append(m.name)
+                    patchtypes.append(m['patchtype'])
+                    patchverts.append([list(f.vertices)])
+                    
+    for ind,pt in enumerate(patchtypes):
+        patches.append([pt])
+        patches[ind].append(patchnames[ind])
+        patches[ind].append(patchverts[ind])
+
+    verts = list(blender_utils.vertices_from_mesh(obj))
+    edges = list(blender_utils.edges_from_mesh(obj))
+    bpy.ops.object.mode_set(mode='OBJECT')
+    
+    obj.select = False
+    if scn.setEdges:
+        polyLines, polyLinesPoints, lengths = getPolyLines(verts, edges, obj)
+    else:
+        polyLines = ''
+        lengths = [[], []]
+    print('lengths:',lengths)
+    bpy.context.scene.objects.active = obj
+    obj.select = True
+    bpy.ops.object.mode_set(mode='EDIT')
+    
+    bm = bmesh.from_edit_mesh(obj.data)
+    dx1l = bm.edges.layers.float.get('dx1')
+    dx2l = bm.edges.layers.float.get('dx2')
+    exp1l = bm.edges.layers.float.get('exp1')
+    exp2l = bm.edges.layers.float.get('exp2')
+    maxdxl = bm.edges.layers.float.get('maxdx')
+    cellsl = bm.edges.layers.int.get('cells')
+    timel = bm.edges.layers.float.get('time')
+    copyAlignedl = bm.edges.layers.int.get('copyAligned')
+    bm.edges.ensure_lookup_table()
+    edgeInfo = dict()
+    for eidx,e in enumerate(bm.edges):
+        edge1 = EdgeInfo()
+        edge1.edge=eidx
+        edge1.dx1=e[dx1l]            
+        edge1.dx2=e[dx2l]
+        edge1.exp1=e[exp1l]
+        edge1.exp2=e[exp2l]
+        edge1.cells=e[cellsl]
+        edge1.maxdx=e[maxdxl]
+        edge1.time=e[timel]
+        edge1.copyAligned=e[copyAlignedl]
+        edge2 = EdgeInfo()
+        edge2.edge=eidx
+        edge2.dx2=e[dx1l]            
+        edge2.dx1=e[dx2l]
+        edge2.exp2=e[exp1l]
+        edge2.exp1=e[exp2l]
+        edge2.cells=e[cellsl]
+        edge2.maxdx=e[maxdxl]
+        edge2.time=e[timel]
+        edge2.copyAligned=e[copyAlignedl]
+        ev = list([e.verts[0].index,e.verts[1].index])
+        if ev in lengths[0]:
+            ind = lengths[0].index(ev)
+            length = lengths[1][ind]
+        elif [ev[1],ev[0]] in lengths[0]:
+            ind = lengths[0].index([ev[1],ev[0]])
+            length = lengths[1][ind]
+        else:
+            length = (verts[ev[0]] - verts[ev[1]]).magnitude
+        if length < 1e-6:
+            self.report({'INFO'}, "Zero length edge detected, check block structure!")        
+            return{'FINISHED'}
+        edge1.length=length
+        edge2.length=length
+        edgeInfo[(e.verts[0].index,e.verts[1].index)] = edge2
+        edgeInfo[(e.verts[1].index,e.verts[0].index)] = edge1
+    
+    NoCells = utils.write(filepath, edges, verts, scn.ctmFloat, 
+        patches, polyLines, edgeInfo, vertexNames, disabled, False)
+    return NoCells
+        
 initProperties()
 
 def register():
