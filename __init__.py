@@ -230,13 +230,13 @@ def initProperties():
         name = "exp1", 
         description = "Expansion ratio on first end",
         default = 1,
-        min = 0)    
+        min = 1)    
 
     bpy.types.Scene.exp2 = FloatProperty(
         name = "exp2", 
         description = "Expansion ratio on second end",
         default = 1,
-        min = 0)  
+        min = 1)  
         
     bpy.types.Scene.cells = IntProperty(
         name = "cells", 
@@ -266,22 +266,29 @@ class UIPanel(bpy.types.Panel):
     bl_context = "object"
     
     def draw(self, context):
+
         layout = self.layout
         scn = context.scene
         obj = context.active_object
-#        settings = context.tool_settings
+        
         try:
             obj['swiftblock']
         except:
             try:
                 obj['swiftBlockObj']
                 layout.operator("delete.preview")
+
             except:
                 layout.operator("enable.swiftblock")
+                
         else:
             layout = layout.column()
             layout.operator("write.bmdfile")
+#            split=layout.split()
+#            col = split.column()
             layout.operator("create.preview")
+#            col = split.column()
+#            col.prop(scn, 'internalCells')
             layout.operator("find.broken")
             layout.prop(scn, 'ctmFloat')
 #            layout.prop(scn, 'resFloat')
@@ -318,13 +325,12 @@ class UIPanel(bpy.types.Panel):
             col.prop(scn, 'exp2')
 #            box.prop(scn, 'cells')
             box.prop(scn, 'maxdx')
+            box.prop(scn, 'copyAligned')
             split = box.split()
             col = split.column()
-            box.prop(scn, 'copyAligned')
             col.operator('set.edges')
             col = split.column()
             col.operator('get.edges')
-
             box = layout.box()
             box = box.column()
             box.label(text='Patch settings')
@@ -585,6 +591,7 @@ class OBJECT_OT_SetPatchName(bpy.types.Operator):
             return{'CANCELLED'}
         return {'FINISHED'}
         
+        
 class OBJECT_OT_SetEdge(bpy.types.Operator):
     '''Sets edge(s) properties'''
     bl_idname = "set.edges"
@@ -622,7 +629,7 @@ class OBJECT_OT_SetEdge(bpy.types.Operator):
         else:
             self.report({'INFO'}, "No edge(s) selected!")
             return{'CANCELLED'}
-        printedgeinfo()
+#        printedgeinfo()
         return {'FINISHED'}
         
 def printedgeinfo():
@@ -825,24 +832,30 @@ class OBJECT_OT_GetPatch(bpy.types.Operator):
         return {'FINISHED'}
 
 class OBJECT_OT_createPreview(bpy.types.Operator):
-    '''Creates a mesh preview as a separate object from selected vertices'''
+    '''Creates a mesh preview as a separate object'''
     bl_idname = "create.preview"
     bl_label = "Preview"
-    
     def execute(self, context):
         from . import preview
         import imp
         imp.reload(preview)
-        mesh = preview.PreviewMesh()
+        try:
+            mesh=preview.PreviewMesh()
+        except RuntimeError:
+            self.report({'INFO'}, 'ERROR: No BlockMesh Found!')
+            return{'CANCELLED'}
+
         cells = writeBMD(mesh.tempdir+'/constant/polyMesh/blockMeshDict')
         mesh.generateMesh()
         bpy.ops.object.editmode_toggle()
         bpy.ops.object.editmode_toggle()
-        bpy.ops.mesh.select_all(action='TOGGLE')
+        bpy.ops.mesh.select_all(action='DESELECT')
         self.report({'INFO'}, "Cells in mesh: " + str(cells))
         return{'FINISHED'}
+        
 
- 
+  
+        
 class OBJECT_OT_deletePreview(bpy.types.Operator):
     '''Delete preview mesh object'''
     bl_idname = "delete.preview"
@@ -866,9 +879,9 @@ class OBJECT_OT_deletePreview(bpy.types.Operator):
             pass
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_mode(type="EDGE")
-        bpy.ops.mesh.select_all(action='TOGGLE')
         return {'FINISHED'} 
- 
+
+
  
 class EdgeInfo:
     edge=None
@@ -882,6 +895,7 @@ class EdgeInfo:
     cells=None
     length=None
     time=None
+    inverse=None
     copyAligned=None
     
 class OBJECT_OT_writeBMD(bpy.types.Operator):
@@ -937,13 +951,15 @@ class OBJECT_OT_writeBMD(bpy.types.Operator):
 
 
 
-def writeBMD(filepath):
+def writeBMD(filepath, showAll=True):
     import locale
     from . import utils
     import imp
     imp.reload(utils)
     from . import blender_utils
     locale.setlocale(locale.LC_ALL, '')
+    
+    stime = time.time()
 
     scn = bpy.context.scene
     obj = bpy.context.active_object
@@ -1000,15 +1016,15 @@ def writeBMD(filepath):
 
     verts = list(blender_utils.vertices_from_mesh(obj))
     edges = list(blender_utils.edges_from_mesh(obj))
-    bpy.ops.object.mode_set(mode='OBJECT')
     
+    bpy.ops.object.mode_set(mode='OBJECT')
+       
     obj.select = False
     if scn.setEdges:
         polyLines, polyLinesPoints, lengths = getPolyLines(verts, edges, obj)
     else:
         polyLines = ''
         lengths = [[], []]
-    print('lengths:',lengths)
     bpy.context.scene.objects.active = obj
     obj.select = True
     bpy.ops.object.mode_set(mode='EDIT')
@@ -1027,7 +1043,7 @@ def writeBMD(filepath):
     for eidx,e in enumerate(bm.edges):
         edge1 = EdgeInfo()
         edge1.edge=eidx
-        edge1.dx1=e[dx1l]            
+        edge1.dx1=e[dx1l] 
         edge1.dx2=e[dx2l]
         edge1.exp1=e[exp1l]
         edge1.exp2=e[exp2l]
@@ -1035,6 +1051,7 @@ def writeBMD(filepath):
         edge1.maxdx=e[maxdxl]
         edge1.time=e[timel]
         edge1.copyAligned=e[copyAlignedl]
+        edge1.inverse=True
         edge2 = EdgeInfo()
         edge2.edge=eidx
         edge2.dx2=e[dx1l]            
@@ -1045,6 +1062,13 @@ def writeBMD(filepath):
         edge2.maxdx=e[maxdxl]
         edge2.time=e[timel]
         edge2.copyAligned=e[copyAlignedl]
+        edge2.inverse=False
+        
+        # There must be one edge with largest fraction for blockMesh.
+        if edge1.dx1>0 and edge1.exp1>1 and edge1.dx1 == edge1.dx2\
+            and edge1.exp1== edge1.exp2:
+            edge1.dx1 += 1.e-6
+            edge2.dx2 += 1.e-6
         ev = list([e.verts[0].index,e.verts[1].index])
         if ev in lengths[0]:
             ind = lengths[0].index(ev)
@@ -1061,11 +1085,10 @@ def writeBMD(filepath):
         edge2.length=length
         edgeInfo[(e.verts[0].index,e.verts[1].index)] = edge2
         edgeInfo[(e.verts[1].index,e.verts[0].index)] = edge1
-    
     NoCells = utils.write(filepath, edges, verts, scn.ctmFloat, 
-        patches, polyLines, edgeInfo, vertexNames, disabled, False)
+        patches, polyLines, edgeInfo, vertexNames, disabled, False,stime)
     return NoCells
-        
+    
 initProperties()
 
 def register():

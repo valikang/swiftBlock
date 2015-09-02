@@ -19,11 +19,11 @@
 '''
 '''
 
-import mathutils
+import mathutils,time
 import numpy as np
 
 # Writes blockMeshDict to provided path
-def write(filepath, edges, vertices_coord, convertToMeters, patchnames, polyLines, edgeInfo, vertexNames, disabled, logging):
+def write(filepath, edges, vertices_coord, convertToMeters, patchnames, polyLines, edgeInfo, vertexNames, disabled, logging,stime):
     if logging:
         logFileName = filepath.replace('blockMeshDict','log.swiftblock')
         debugFileName = filepath.replace('blockMeshDict','facesFound.obj')
@@ -35,10 +35,8 @@ def write(filepath, edges, vertices_coord, convertToMeters, patchnames, polyLine
     for pn in patchnames:
         for vl in pn[2]:
             patchfaces.append(vl)
-    
     # Get the blockstructure, which edges that have the same #of cells, some info on face, and edges-in-use
     logFile, block_print_out, dependent_edges, face_info, all_edges, faces_as_list_of_nodes = blockFinder(edges, vertices_coord, logFileName, debugFileName, disabled)
-
     bmFile = open(filepath,'w')
     bmFile.write(foamHeader())
     bmFile.write("\nconvertToMeters " + str(convertToMeters) + ";\n\nvertices\n(\n")
@@ -48,8 +46,8 @@ def write(filepath, edges, vertices_coord, convertToMeters, patchnames, polyLine
     bmFile.write(");\nblocks\n(\n")
     
     # Get the directions of the parallel edges
-    edgeDirections, blockDirections = getEdgeDirections(dependent_edges,block_print_out)
-
+    edgeDirections = getEdgeDirections(dependent_edges,block_print_out,edgeInfo)
+    
     # Loop through all blocks and get resolution and grading and write to file
     NoCells = 0
     for bid, vl in enumerate(block_print_out):
@@ -61,23 +59,22 @@ def write(filepath, edges, vertices_coord, convertToMeters, patchnames, polyLine
         for es, edgeSet in enumerate(dependent_edges):
             if edge(vl[0],vl[1]) in edgeSet:
                 iedges = [(vl[e[0]],vl[e[1]]) for e in [(0,1),(3,2),(7,6),(4,5)]]
-                ires,igrad = getGrading(iedges,edgeSet,edgeInfo,blockDirections[bid][0])
-
+                ires,igrad = getGrading(iedges,edgeSet,edgeInfo, iedges[0] in edgeDirections[es])
+                
             if edge(vl[0],vl[3]) in edgeSet:
                 jedges = [(vl[e[0]],vl[e[1]]) for e in [(0,3),(1,2),(5,6),(4,7)]]
-                jres,jgrad = getGrading(jedges,edgeSet,edgeInfo,blockDirections[bid][1])
+                jres,jgrad = getGrading(jedges,edgeSet,edgeInfo,jedges[0] in edgeDirections[es])
 
             if edge(vl[0],vl[4]) in edgeSet:
                 kedges = [(vl[e[0]],vl[e[1]]) for e in [(0,4),(1,5),(2,6),(3,7)]]
-                kres,kgrad = getGrading(kedges,edgeSet,edgeInfo,blockDirections[bid][2])
+                kres,kgrad = getGrading(kedges,edgeSet,edgeInfo,kedges[0] in edgeDirections[es])
                               
         NoCells += ires*jres*kres
-        bmFile.write('    hex ({} {} {} {} {} {} {} {}) '.format(*vl) \
+        bmFile.write('// block id {} \nhex ({} {} {} {} {} {} {} {}) '.format(bid,*vl) \
                    + blockName + ' ({} {} {}) '.format(ires,jres,kres)\
                    + 'edgeGrading (' + igrad + jgrad + kgrad + '\n)\n' ) 
         
     bmFile.write(');\n\npatches\n(\n')
-    
     for pn in patchnames:
         if not len(pn[2]) == 0:
             bmFile.write('    {} {}\n    (\n'.format(pn[0],pn[1]))
@@ -96,40 +93,45 @@ def write(filepath, edges, vertices_coord, convertToMeters, patchnames, polyLine
     return NoCells
 
 
-def getEdgeDirections(dependent_edges, block_print_out):
+def getEdgeDirections(dependent_edges, block_print_out, edgeInfo):
     edgeDirections = [set() for i in dependent_edges]               
     positiveBlockEdges = [[(0,1),(3,2),(7,6),(4,5)],[(0,3),(1,2),(5,6),(4,7)],[(0,4),(1,5),(2,6),(3,7)]]
-    blockDirections = [[None,None,None] for i in block_print_out]
-    for i in range(100):
-        ready=True
-        for bd in blockDirections:
-            if None in bd:
-                ready=False
+    for i in range(1000):
+        ready = True
+        for ed, de in zip(edgeDirections,dependent_edges):
+            if not len(ed)==len(de):
+                ready = False
         if ready:
             break 
         for bid, vl in enumerate(block_print_out):
             for es, edgeSet in enumerate(dependent_edges):
                 for direction in range(3):
-                    if edge(vl[positiveBlockEdges[direction][0][0]],vl[positiveBlockEdges[direction][0][1]]) in edgeSet:     
-                        if not edgeDirections[es]:
+                    if edge(vl[positiveBlockEdges[direction][0][0]],vl[positiveBlockEdges[direction][0][1]]) in edgeSet:  
+                        if not edgeDirections[es]:                             
                             edgeDirections[es] = set([(vl[e[0]],vl[e[1]]) for e in positiveBlockEdges[direction]])
-                            blockDirections[bid][direction]=0
                         else:
                             simedges = edgeDirections[es].intersection([(vl[e[0]],vl[e[1]]) for e in positiveBlockEdges[direction]])
                             if simedges:
                                 edgeDirections[es] |= set([(vl[e[0]],vl[e[1]]) for e in positiveBlockEdges[direction]])
-                                blockDirections[bid][direction]=0
                             else:
                                 asimedges= set(edgeDirections[es]).intersection([(vl[e[1]],vl[e[0]]) for e in positiveBlockEdges[direction]])
                                 if asimedges:
                                     edgeDirections[es] |= set([(vl[e[1]],vl[e[0]]) for e in positiveBlockEdges[direction]])
-                                    blockDirections[bid][direction]=1
-    return edgeDirections,blockDirections                    
+                                    
+    # make sure that the gradings of the last modified edges are respected                               
+    for idx,(ed,es) in enumerate(zip(edgeDirections,dependent_edges)):
+        iedge = np.argmax([edgeInfo[(e[0],e[1])].time for e in es])
+        depEdge = (es[iedge][0],es[iedge][1])
+        if depEdge in edgeDirections[idx]:
+            edgeDirections[idx] = set([(e[1],e[0]) for e in edgeDirections[idx]])  
+    return edgeDirections               
                     
 def getGrading(edges, dependent_edges, edgeInfo, changeDirection):
+    #Get the number of cells from edge which has been most recent modified
     iedge = np.argmax([edgeInfo[(e[0],e[1])].time for e in dependent_edges])
     depEdge = edgeInfo[(dependent_edges[iedge][0],dependent_edges[iedge][1])]
     cells, grading = getGradingStr(depEdge,changeDirection)
+    
     gradingStr = ''   
     if depEdge.copyAligned:
         for edge in edges:
@@ -138,11 +140,11 @@ def getGrading(edges, dependent_edges, edgeInfo, changeDirection):
         for edge in edges:
             edgei = edgeInfo[edge[0],edge[1]]
             cellse, grading = getGradingStr(edgei,False)
-            gradingStr += grading
-        
+            gradingStr += grading   
     return cells, gradingStr
 
 def getGradingStr(edge, changeDirection):
+    controlby='MAX CELL SIZE'
     if edge.dx1 and not (edge.exp1-1) < 1e-6:
         n1=np.log(edge.maxdx/edge.dx1)/np.log(edge.exp1)
         l1=edge.dx1*(1-edge.exp1**n1)/(1-edge.exp1)
@@ -159,33 +161,43 @@ def getGradingStr(edge, changeDirection):
     else:
         n2=0
         l2=0
-        ratio2=1
-            
-    if l1 + l2 > edge.length:
+        ratio2=1 
+        
 
-        maxdx = (edge.length*(1-edge.exp1)*(1-edge.exp2)-edge.dx1-edge.dx2+\
-                 edge.exp2*edge.dx1+edge.exp1*edge.dx2)/(edge.exp1+edge.exp2-2)
+    if l1 + l2 > edge.length :
+        # if length is too short, increase expansion ratio
+        if controlby == 'EXPANSION RATIO':
+            l1=edge.length*l1/(l1+l2)
+            l2=edge.length-l1
+            if l1 and edge.dx1:
+                n1=np.log(edge.maxdx/edge.dx1)/np.log(1-edge.dx1/l1+edge.maxdx/l1)
+            else:
+                n1=0
+            if l2 and edge.dx2:
+                n2=np.log(edge.maxdx/edge.dx2)/np.log(1-edge.dx2/l2+edge.maxdx/l2)
+            else:
+                n2=0
 
-        if edge.dx1 and not (edge.exp1-1) < 1e-6:
-            n1 = np.log(maxdx/edge.dx1)/np.log(edge.exp1)
-            l1 = edge.dx1*(1-edge.exp1**n1)/(1-edge.exp1)
-            ratio1 = maxdx/edge.dx1
-            
-        if edge.dx2 and not (edge.exp2-1) < 1e-6:
-            l2 = edge.length-l1
-            n2 = np.log(1-l2/edge.dx2*(1-edge.exp2))/np.log(edge.exp2)
-            ratio2 = maxdx/edge.dx2
-            
+        # if length is too short, decrease the size of the max cell.
+        elif l1 + l2 > edge.length and controlby == 'MAX CELL SIZE':
+            l1=edge.length*l1/(l1+l2)
+            l2=edge.length-l1
+    
+            if edge.dx1 and not (edge.exp1-1) < 1e-6:
+                n1 = np.log(1-l1/edge.dx1*(1-edge.exp1))/np.log(edge.exp1)
+                ratio1 = edge.exp1**n1
+                
+            if edge.dx2 and not (edge.exp2-1) < 1e-6:
+                n2 = np.log(1-l2/edge.dx2*(1-edge.exp2))/np.log(edge.exp2)
+                ratio2 = edge.exp2**n2
+        else:
+             print('Too short edge has not been taken into account')
     if edge.maxdx == 0:
         edge.maxdx = 1
     cells=np.round(((edge.length-l1-l2)/edge.maxdx))+n1+n2
 
     if cells < 1:
         cells=1
-    if changeDirection:
-        n1,n2 = n2,n1
-        l1,l2 = l2,l1
-        ratio1,ratio2 = ratio2,ratio1
         
     l1s = l1/edge.length
     n1s = n1/cells
@@ -193,8 +205,16 @@ def getGradingStr(edge, changeDirection):
     n2s = n2/cells
     
     lc = max(1-l1s-l2s,0)
-    nc = max(1-n1s-n2s,0)
+    nc = max(1-n1s-n2s,0)     
+            
     
+    if lc == 0 or nc == 0:
+        nc = lc = 0
+        
+    if changeDirection:
+        n1s,n2s = n2s,n1s
+        l1s,l2s = l2s,l1s
+        ratio1,ratio2 = ratio2,ratio1
     gradingStr='\n(\n ({:.6g} {:.6g} {:.6g}) ({:.6g} {:.6g} {:.6g}) ({:.6g} {:.6g} {:.6g}) '.format(
             l1s,n1s,ratio1,\
             lc,nc,1,\
@@ -253,8 +273,6 @@ def repairFaces(edges, vertices_coord, disabled, obj, removeInternal, createBoun
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='DESELECT')
     return nRemoved, nCreated
-
-# ------------------------------------------------------------------------------- #
 
 
 def removedup(seq): 
@@ -353,6 +371,7 @@ class cycleFinder:
 
 
 def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disabled = []):
+    stime = time.time()
     if len(logFileName) > 0:
         logFile = open(logFileName,'w')
     else:
@@ -364,13 +383,11 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
     faces_as_list_of_nodes = []
     faces_as_list_of_edges = []
     tmp_v,tmp_e = cycFindFaces.buildAllFourEdgeFaces()
-
     for ii, i in enumerate(tmp_v): # get rid of possible triangles
         if len(i) == 4:
             faces_as_list_of_vertices.append([vertices_coord[i[0]], vertices_coord[i[1]], vertices_coord[i[2]], vertices_coord[i[3]]])
             faces_as_list_of_nodes.append(i)
             faces_as_list_of_edges.append(tmp_e[ii])
-
     # Create a wavefront obj file showing all the faces just found
     if len(debugFileName) > 0:
         debugFile = open(debugFileName,'w')
@@ -397,7 +414,6 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
         face_info[fid]['centre'] = facecentre
         
     connections_between_faces = []
-
     # Find connections between faces, i.e. they share one edge
     for fid1, f1 in enumerate(faces_as_list_of_edges):
         for e in f1:
@@ -405,11 +421,12 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
                 if e in f2 and not fid1 == fid2:
                     if not [min(fid1,fid2),max(fid1,fid2)] in connections_between_faces:
                         connections_between_faces.append([min(fid1,fid2),max(fid1,fid2)])
-
+   
     # Use these connections to find cycles of connected faces; called faceLoops 
     cycFindFaceLoops = cycleFinder(connections_between_faces,range(len(faces_as_list_of_vertices)))
+    
+    #this is the most time consuming step
     faceLoops_as_list_of_faces, faceLoops_as_list_of_connections = cycFindFaceLoops.buildAllFourEdgeFaces()
-
     # Dig out block structures from these face loops
     block_as_faceLoop = []
     for qf in faceLoops_as_list_of_faces:
@@ -419,7 +436,6 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
                 qf_is_a_block = False
         if qf_is_a_block:
             block_as_faceLoop.append(qf)
-      
     # Get rid of block dublets - there are plenty
     faceLoops_nodes = [[] for i in range(len(block_as_faceLoop))]
     for qfid, qf in enumerate(block_as_faceLoop):
@@ -429,7 +445,6 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
                     faceLoops_nodes[qfid].append(n)
     for qf in faceLoops_nodes:
         qf.sort()
-
     tmp = []
     potentialBlocks = [] # Each block is identified several times. Condense and put in potentialBlocks (list of vertices index)
     for qfid, qf in enumerate(faceLoops_nodes):
@@ -437,7 +452,6 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
             tmp.append(qf)
             if len(qf) == 8:
                 potentialBlocks.append(block_as_faceLoop[qfid])
-
     offences = []
     block_centres = []
     formalBlocks = []
@@ -445,7 +459,7 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
     all_edges = []
     if len(logFileName) > 0:
         logFile.write('number of potential blocks identified = ' + str(len(potentialBlocks)) + '\n')
-        
+       
     for b in potentialBlocks:
         is_a_real_block = True  # more sanity checks soon...
         block = []
@@ -524,7 +538,6 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
 
             vl = quad1 + quad2
             formalBlocks.append(vl) # list of verts defining the block in correct order
-
 # formalBlocks are blocks that hava formal block structure and are not flat. Still in an O-mesh there are more formal
 # blocks present than what we want. More filtering...
 
@@ -546,7 +559,6 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
                 face_info[fid]['pos'].append(bid)
             else:
                 face_info[fid]['neg'].append(bid)
-
     for f in face_info:  # Not more than two blocks on each side of a face. If a block scores too high in 'offences' it will be ruled out
         if len(face_info[f]['pos'])>1:
             for bid in face_info[f]['pos']:
@@ -554,7 +566,6 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
         if len(face_info[f]['neg'])>1:
             for bid in face_info[f]['neg']:
                 offences[bid] += 1
-
     block_print_out = []
     for bid, vl in enumerate(formalBlocks):
         if offences[bid] <= 3 and not all( v in disabled for v in vl ):
@@ -583,14 +594,13 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
                 if bid in face_info[f]['neg']:
                     ind = face_info[f]['neg'].index(bid)
                     face_info[f]['neg'].pop(ind)
-
+    #this is the second most time consuming step
     still_coupling = True
     while still_coupling:
         still_coupling = couple_edges(dependent_edges)
-
+        
     for es, edgeSet in enumerate(dependent_edges): # remove duplicates in lists
         dependent_edges[es] = removedup(edgeSet)
-
     return logFile, block_print_out, dependent_edges, face_info, all_edges, faces_as_list_of_nodes
 
 def smootherProfile():
