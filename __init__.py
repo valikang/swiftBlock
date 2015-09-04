@@ -25,7 +25,7 @@ def getPolyLines(verts, edges, obj):
     polyLinesPoints = []
     polyLines = ''
     polyLinesLengths = [[], []]
-    
+
     def isPointOnEdge(point, A, B):
         eps = (((A - B).magnitude - (point-B).magnitude) - (A-point).magnitude)
         return True if (abs(eps) < scn.tol) else False
@@ -77,7 +77,7 @@ def getPolyLines(verts, edges, obj):
             if mag < scn.tol:
                 snapped_verts[vid] = gvid
                 break   # We have found a vertex co-located, continue with next block vertex
-    
+
     bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(True,False,False)")
     for edid, ed in enumerate(edges):
         if ed[0] in snapped_verts and ed[1] in snapped_verts and not nosnap[edid]:
@@ -111,7 +111,7 @@ def getPolyLines(verts, edges, obj):
                 polyLineStr, vectors, length = sortedVertices(polyLineverts,polyLineedges,startVertex)
                 polyLinesPoints.append([ed[0],ed[1],vectors])
                 polyLinesLengths[0].append([min(ed[0],ed[1]), max(ed[0],ed[1])]) # write out sorted
-                polyLinesLengths[1].append(length) 
+                polyLinesLengths[1].append(length)
                 polyLine = 'polyLine {} {} ('.format(*ed)
                 polyLine += polyLineStr
                 polyLine += ')\n'
@@ -153,105 +153,105 @@ def sortedVertices(verts,edges,startVert):
 def patchColor(patch_no):
     color = [(1.0,0.,0.), (0.0,1.,0.),(0.0,0.,1.),(0.707,0.707,0),(0,0.707,0.707),(0.707,0,0.707)]
     return color[patch_no % len(color)]
-    
+
 def initProperties():
 
     bpy.types.Scene.tol = FloatProperty(
-        name = "tol", 
+        name = "tol",
         description = "Snapping tolerance",
         default = 1e-6,
         min = 0.)
-        
+
     bpy.types.Scene.ctmFloat = FloatProperty(
-        name = "convertToMeters", 
+        name = "convertToMeters",
         description = "Conversion factor: Blender coords to meter",
         default = 1.0,
         min = 0.)
-        
- 
+
+
     bpy.types.Scene.whichCell = EnumProperty(
-        items = [('Coarse', 'Coarse', 'Let the coarse cells have the target resolution'), 
+        items = [('Coarse', 'Coarse', 'Let the coarse cells have the target resolution'),
                  ('Fine', 'Fine', 'Let the fine cells have the target resolution')
                  ],
         name = "Cell resolution")
-        
+
     bpy.types.Scene.setEdges = BoolProperty(
-        name = "Set edges", 
+        name = "Set edges",
         description = "Should edges be fetched from another object?",
         default = False)
-        
+
     bpy.types.Scene.geoobjName = StringProperty(
-        name = "Object", 
+        name = "Object",
         description = "Name of object to get edges from (this box disappears when object is found)",
         default = '')
 
     bpy.types.Scene.bcTypeEnum = EnumProperty(
-        items = [('wall', 'wall', 'Defines the patch as wall'), 
+        items = [('wall', 'wall', 'Defines the patch as wall'),
                  ('patch', 'patch', 'Defines the patch as generic patch'),
                  ('empty', 'empty', 'Defines the patch as empty'),
                  ('symmetryPlane', 'symmetryPlane', 'Defines the patch as symmetryPlane'),
                  ],
         name = "Patch type")
-    
+
     bpy.types.Scene.patchName = StringProperty(
         name = "Patch name",
         description = "Specify name of patch (max 31 chars)",
         default = "defaultName")
-    
+
     bpy.types.Scene.snapping = EnumProperty(
-        items = [('yes', 'Yes', 'The edge gets a polyLine if its vertices are snapped'), 
+        items = [('yes', 'Yes', 'The edge gets a polyLine if its vertices are snapped'),
                  ('no', 'No', 'The edge will be meshed as a straight line')
                  ],
         name = "Edge snapping")
 
     bpy.types.Scene.removeInternal = BoolProperty(
-        name = "Remove internal faces", 
+        name = "Remove internal faces",
         description = "Should internal faces be removed?",
         default = False)
-        
+
     bpy.types.Scene.createBoundary = BoolProperty(
-        name = "Create boundary faces", 
+        name = "Create boundary faces",
         description = "Should boundary faces be created?",
         default = False)
-    
+
     bpy.types.Scene.dx1 = FloatProperty(
-        name = "dx1", 
+        name = "dx1",
         description = "First cell size on first end",
         default = 0,
-        min = 0)    
+        min = 0)
 
     bpy.types.Scene.dx2 = FloatProperty(
-        name = "dx2", 
+        name = "dx2",
         description = "First cell size on second end",
         default = 0,
-        min = 0)  
-        
+        min = 0)
+
     bpy.types.Scene.exp1 = FloatProperty(
-        name = "exp1", 
+        name = "exp1",
         description = "Expansion ratio on first end",
         default = 1,
-        min = 1)    
+        min = 1)
 
     bpy.types.Scene.exp2 = FloatProperty(
-        name = "exp2", 
+        name = "exp2",
         description = "Expansion ratio on second end",
         default = 1,
-        min = 1)  
-        
+        min = 1)
+
     bpy.types.Scene.cells = IntProperty(
-        name = "cells", 
+        name = "cells",
         description = "Number of cells",
         default = 0,
         min = 0)
-        
+
     bpy.types.Scene.maxdx = FloatProperty(
-        name = "max dx", 
+        name = "max dx",
         description = "Maximum cell size",
         default = 1,
-        min = 1e-6)  
-        
+        min = 1e-6)
+
     bpy.types.Scene.copyAligned = BoolProperty(
-        name = "Copy to parallel edges", 
+        name = "Copy to parallel edges",
         description = "Copy edge properties to parallel edges",
         default = False)
     return
@@ -264,13 +264,13 @@ class UIPanel(bpy.types.Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "object"
-    
+
     def draw(self, context):
 
         layout = self.layout
         scn = context.scene
         obj = context.active_object
-        
+
         try:
             obj['swiftblock']
         except:
@@ -280,7 +280,7 @@ class UIPanel(bpy.types.Panel):
 
             except:
                 layout.operator("enable.swiftblock")
-                
+
         else:
             layout = layout.column()
             layout.operator("write.bmdfile")
@@ -294,9 +294,9 @@ class UIPanel(bpy.types.Panel):
 #            layout.prop(scn, 'resFloat')
             box = layout.box()
             box = box.column()
-            
-            box.label(text='Edge settings')            
-            
+
+            box.label(text='Edge settings')
+
             box.prop(scn, 'setEdges')
             if scn.setEdges:
                 try:
@@ -417,7 +417,7 @@ class OBJECT_OT_insertSmoother(bpy.types.Operator):
         try:
             bpy.data.objects[context.scene.geoobjName]
         except:
-            self.report({'INFO'}, "Cannot find object for edges!")        
+            self.report({'INFO'}, "Cannot find object for edges!")
             return{'CANCELLED'}
         import mathutils
         from . import utils
@@ -434,7 +434,7 @@ class OBJECT_OT_insertSmoother(bpy.types.Operator):
         matrix = obj.matrix_world.copy()
         for v in obj.data.vertices:
             if v.select:
-                 centre += matrix*v.co 
+                 centre += matrix*v.co
                  no_verts += 1
         if no_verts == 0:
             self.report({'INFO'}, "Nothing selected!")
@@ -483,7 +483,7 @@ class OBJECT_OT_insertSmoother(bpy.types.Operator):
         scn.objects.active = obj
         bpy.ops.object.mode_set(mode='EDIT')
         return {'FINISHED'}
-    
+
 class OBJECT_OT_flipEdge(bpy.types.Operator):
     '''Flip direction of selected edge(s). This is useful if you want to \
 set grading on several edges which are initially misaligned'''
@@ -500,9 +500,9 @@ set grading on several edges which are initially misaligned'''
 
         bpy.ops.object.mode_set(mode='EDIT')
         return {'FINISHED'}
-    
 
-    
+
+
 class OBJECT_OT_ChangeGeoObj(bpy.types.Operator):
     '''Click to change object'''
     bl_idname = "change.geoobj"
@@ -511,12 +511,12 @@ class OBJECT_OT_ChangeGeoObj(bpy.types.Operator):
     def execute(self, context):
         context.scene.geoobjName = ''
         return {'FINISHED'}
-    
+
 class OBJECT_OT_Enable(bpy.types.Operator):
     '''Enables SwiftBlock for the active object'''
     bl_idname = "enable.swiftblock"
     bl_label = "Enable SwiftBlock"
-    
+
     def execute(self, context):
         obj = context.active_object
         obj['swiftblock'] = True
@@ -544,16 +544,16 @@ class OBJECT_OT_Enable(bpy.types.Operator):
             mat = bpy.data.materials['defaultName']
             patchindex = list(obj.data.materials).index(mat)
             obj.active_material_index = patchindex
-        except: 
+        except:
             mat = bpy.data.materials.new('defaultName')
             mat.diffuse_color = (0.5,0.5,0.5)
-            bpy.ops.object.material_slot_add() 
+            bpy.ops.object.material_slot_add()
             obj.material_slots[-1].material = mat
         mat['patchtype'] = 'wall'
-        bpy.ops.object.editmode_toggle()  
+        bpy.ops.object.editmode_toggle()
         bpy.ops.object.material_slot_assign()
         bpy.ops.mesh.select_all(action='DESELECT')
-        bpy.ops.object.editmode_toggle()  
+        bpy.ops.object.editmode_toggle()
         bpy.ops.object.editmode_toggle()
         return{'FINISHED'}
 
@@ -561,7 +561,7 @@ class OBJECT_OT_SetPatchName(bpy.types.Operator):
     '''Set the given name to the selected faces'''
     bl_idname = "set.patchname"
     bl_label = "Set name"
-    
+
     def execute(self, context):
         scn = context.scene
         obj = context.active_object
@@ -581,17 +581,17 @@ class OBJECT_OT_SetPatchName(bpy.types.Operator):
             except: # add a new patchname (as a blender material, as such face props are conserved during mesh mods)
                 mat = bpy.data.materials.new(namestr)
                 mat.diffuse_color = patchColor(len(obj.data.materials)-1)
-                bpy.ops.object.material_slot_add() 
+                bpy.ops.object.material_slot_add()
                 obj.material_slots[-1].material = mat
             mat['patchtype'] = scn.bcTypeEnum
-            bpy.ops.object.editmode_toggle()  
+            bpy.ops.object.editmode_toggle()
             bpy.ops.object.material_slot_assign()
         else:
-            self.report({'INFO'}, "No faces selected!")        
+            self.report({'INFO'}, "No faces selected!")
             return{'CANCELLED'}
         return {'FINISHED'}
-        
-        
+
+
 class OBJECT_OT_SetEdge(bpy.types.Operator):
     '''Sets edge(s) properties'''
     bl_idname = "set.edges"
@@ -609,7 +609,10 @@ class OBJECT_OT_SetEdge(bpy.types.Operator):
         maxdxl = bm.edges.layers.float.get('maxdx')
         timel = bm.edges.layers.float.get('time')
         copyAlignedl = bm.edges.layers.int.get('copyAligned')
-        bm.edges.ensure_lookup_table()
+
+        # For older versions of Blender
+        if hasattr(bm.edges, "ensure_lookup_table"):
+            bm.edges.ensure_lookup_table()
 
         anyselected = False
         for e in bm.edges:
@@ -631,7 +634,7 @@ class OBJECT_OT_SetEdge(bpy.types.Operator):
             return{'CANCELLED'}
 #        printedgeinfo()
         return {'FINISHED'}
-        
+
 def printedgeinfo():
     obj = bpy.context.active_object
     bpy.ops.object.mode_set(mode='EDIT')
@@ -643,10 +646,11 @@ def printedgeinfo():
     cellsl = bm.edges.layers.int.get('cells')
     maxdxl = bm.edges.layers.float.get('maxdx')
     timel = bm.edges.layers.float.get('time')
-    bm.edges.ensure_lookup_table()
+    if hasattr(bm.edges, "ensure_lookup_table"):
+        bm.edges.ensure_lookup_table()
     string = ''
     print('{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>12}'.format(\
-    'eidx','ver1','ver2','dx1','dx2','grow1','grow2','maxdx','time')) 
+    'eidx','ver1','ver2','dx1','dx2','grow1','grow2','maxdx','time'))
     for idx,e in enumerate(bm.edges):
         string += '{:6}{:6}{:6}{:{numbers}.{decimals}g}{:{numbers}.{decimals}g}\
 {:{numbers}.{decimals}g}{:{numbers}.{decimals}g}\
@@ -654,9 +658,9 @@ def printedgeinfo():
                   idx,e.verts[0].index,e.verts[1].index,e[dx1l],e[dx2l],\
                   e[exp1l],e[exp2l],e[maxdxl],e[timel],\
                   numbers=6,decimals=2)+'\n'
-    print(string)    
-    
-    
+    print(string)
+
+
 class OBJECT_OT_GetEdge(bpy.types.Operator):
     '''Get edge(s) properties'''
     bl_idname = "get.edges"
@@ -674,7 +678,8 @@ class OBJECT_OT_GetEdge(bpy.types.Operator):
         cellsl = bm.edges.layers.int.get('cells')
         maxdxl = bm.edges.layers.float.get('maxdx')
         copyAlignedl = bm.edges.layers.int.get('copyAligned')
-        bm.edges.ensure_lookup_table()
+        if hasattr(bm.edges, "ensure_lookup_table"):
+            bm.edges.ensure_lookup_table()
         anyselected = False
         for e in bm.edges:
             if e.select == True:
@@ -692,8 +697,8 @@ class OBJECT_OT_GetEdge(bpy.types.Operator):
         else:
             self.report({'INFO'}, "No edge(s) selected!")
             return{'CANCELLED'}
-        return {'FINISHED'}    
-        
+        return {'FINISHED'}
+
 
 
 
@@ -745,13 +750,13 @@ class OBJECT_OT_RepairFaces(bpy.types.Operator):
     bl_label = "Repair"
 
     c = EnumProperty(
-        items = [('wall', 'wall', 'Defines the patch as wall'), 
+        items = [('wall', 'wall', 'Defines the patch as wall'),
                  ('patch', 'patch', 'Defines the patch as generic patch'),
                  ('empty', 'empty', 'Defines the patch as empty'),
                  ('symmetryPlane', 'symmetryPlane', 'Defines the patch as symmetryPlane'),
                  ],
         name = "Patch type")
-        
+
     def execute(self, context):
         from . import utils
         import imp
@@ -762,7 +767,7 @@ class OBJECT_OT_RepairFaces(bpy.types.Operator):
         createBoundary = bpy.context.scene.createBoundary
 
         if not createBoundary and not removeInternal:
-            self.report({'INFO'}, "Repair: Nothing to do!")        
+            self.report({'INFO'}, "Repair: Nothing to do!")
             return{'CANCELLED'}
 
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -790,13 +795,13 @@ class OBJECT_OT_RepairFaces(bpy.types.Operator):
         bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.object.mode_set(mode='OBJECT')
         nRemoved, nCreated = utils.repairFaces(edges, verts, disabled, obj, removeInternal, createBoundary)
-        self.report({'INFO'}, "Created {} boundary faces and removed {} internal faces".format(nCreated, nRemoved))        
+        self.report({'INFO'}, "Created {} boundary faces and removed {} internal faces".format(nCreated, nRemoved))
         return {'FINISHED'}
 
     def invoke(self, context, event):
         context.window_manager.invoke_props_dialog(self, width=200)
-        return {'RUNNING_MODAL'}  
- 
+        return {'RUNNING_MODAL'}
+
     def draw(self, context):
         scn = context.scene
         obj = context.object
@@ -811,7 +816,7 @@ class OBJECT_OT_GetPatch(bpy.types.Operator):
     '''Click to select faces belonging to this patch'''
     bl_idname = "set.getpatch"
     bl_label = "Get patch"
-    
+
     whichPatch = StringProperty()
 
     def execute(self, context):
@@ -827,7 +832,7 @@ class OBJECT_OT_GetPatch(bpy.types.Operator):
         obj.active_material_index = patchindex
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.object.material_slot_select()
-        scn.bcTypeEnum = mat['patchtype'] 
+        scn.bcTypeEnum = mat['patchtype']
         scn.patchName = self.whichPatch
         return {'FINISHED'}
 
@@ -852,10 +857,10 @@ class OBJECT_OT_createPreview(bpy.types.Operator):
         bpy.ops.mesh.select_all(action='DESELECT')
         self.report({'INFO'}, "Cells in mesh: " + str(cells))
         return{'FINISHED'}
-        
 
-  
-        
+
+
+
 class OBJECT_OT_deletePreview(bpy.types.Operator):
     '''Delete preview mesh object'''
     bl_idname = "delete.preview"
@@ -870,7 +875,7 @@ class OBJECT_OT_deletePreview(bpy.types.Operator):
             except:
                 obj.select = False
         bpy.ops.object.delete()
-        try:        
+        try:
             obj = bpy.data.objects[name]
             obj.select = True
             obj.hide = False
@@ -879,10 +884,10 @@ class OBJECT_OT_deletePreview(bpy.types.Operator):
             pass
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.mesh.select_mode(type="EDGE")
-        return {'FINISHED'} 
+        return {'FINISHED'}
 
 
- 
+
 class EdgeInfo:
     edge=None
     v1=None
@@ -897,19 +902,19 @@ class EdgeInfo:
     time=None
     inverse=None
     copyAligned=None
-    
+
 class OBJECT_OT_writeBMD(bpy.types.Operator):
     '''Writes out a blockMeshDict file for the currently selected object'''
     bl_idname = "write.bmdfile"
     bl_label = "Write"
-    
+
     if "bpy" in locals():
         import imp
         if "utils" in locals():
             imp.reload(utils)
         if "blender_utils" in locals():
             imp.reload(blender_utils)
-    
+
     filepath = StringProperty(
             name="File Path",
             description="Filepath used for exporting the file",
@@ -935,7 +940,7 @@ class OBJECT_OT_writeBMD(bpy.types.Operator):
             try:
                 bpy.data.objects[context.scene.geoobjName]
             except:
-                self.report({'INFO'}, "Cannot find object for edges!")        
+                self.report({'INFO'}, "Cannot find object for edges!")
                 return{'CANCELLED'}
         try:
             self.filepath = context.active_object['path']
@@ -943,7 +948,7 @@ class OBJECT_OT_writeBMD(bpy.types.Operator):
             self.filepath = 'blockMeshDict'
         bpy.context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
-    
+
     def execute(self, context):
         cells = writeBMD(self.filepath)
         self.report({'INFO'}, "Cells in mesh: " + str(cells))
@@ -958,7 +963,7 @@ def writeBMD(filepath, showAll=True):
     imp.reload(utils)
     from . import blender_utils
     locale.setlocale(locale.LC_ALL, '')
-    
+
     stime = time.time()
 
     scn = bpy.context.scene
@@ -967,7 +972,7 @@ def writeBMD(filepath, showAll=True):
     patchtypes = list()
     patchverts = list()
     patches = list()
-    
+
     bpy.ops.object.mode_set(mode='OBJECT')   # Refresh mesh object
     bpy.ops.object.mode_set(mode='EDIT')
 
@@ -1008,7 +1013,7 @@ def writeBMD(filepath, showAll=True):
                     patchnames.append(m.name)
                     patchtypes.append(m['patchtype'])
                     patchverts.append([list(f.vertices)])
-                    
+
     for ind,pt in enumerate(patchtypes):
         patches.append([pt])
         patches[ind].append(patchnames[ind])
@@ -1016,9 +1021,9 @@ def writeBMD(filepath, showAll=True):
 
     verts = list(blender_utils.vertices_from_mesh(obj))
     edges = list(blender_utils.edges_from_mesh(obj))
-    
+
     bpy.ops.object.mode_set(mode='OBJECT')
-       
+
     obj.select = False
     if scn.setEdges:
         polyLines, polyLinesPoints, lengths = getPolyLines(verts, edges, obj)
@@ -1028,7 +1033,7 @@ def writeBMD(filepath, showAll=True):
     bpy.context.scene.objects.active = obj
     obj.select = True
     bpy.ops.object.mode_set(mode='EDIT')
-    
+
     bm = bmesh.from_edit_mesh(obj.data)
     dx1l = bm.edges.layers.float.get('dx1')
     dx2l = bm.edges.layers.float.get('dx2')
@@ -1038,12 +1043,13 @@ def writeBMD(filepath, showAll=True):
     cellsl = bm.edges.layers.int.get('cells')
     timel = bm.edges.layers.float.get('time')
     copyAlignedl = bm.edges.layers.int.get('copyAligned')
-    bm.edges.ensure_lookup_table()
+    if hasattr(bm.edges, "ensure_lookup_table"):
+        bm.edges.ensure_lookup_table()
     edgeInfo = dict()
     for eidx,e in enumerate(bm.edges):
         edge1 = EdgeInfo()
         edge1.edge=eidx
-        edge1.dx1=e[dx1l] 
+        edge1.dx1=e[dx1l]
         edge1.dx2=e[dx2l]
         edge1.exp1=e[exp1l]
         edge1.exp2=e[exp2l]
@@ -1054,7 +1060,7 @@ def writeBMD(filepath, showAll=True):
         edge1.inverse=True
         edge2 = EdgeInfo()
         edge2.edge=eidx
-        edge2.dx2=e[dx1l]            
+        edge2.dx2=e[dx1l]
         edge2.dx1=e[dx2l]
         edge2.exp2=e[exp1l]
         edge2.exp1=e[exp2l]
@@ -1063,7 +1069,7 @@ def writeBMD(filepath, showAll=True):
         edge2.time=e[timel]
         edge2.copyAligned=e[copyAlignedl]
         edge2.inverse=False
-        
+
         # There must be one edge with largest fraction for blockMesh.
         if edge1.dx1>0 and edge1.exp1>1 and edge1.dx1 == edge1.dx2\
             and edge1.exp1== edge1.exp2:
@@ -1079,16 +1085,16 @@ def writeBMD(filepath, showAll=True):
         else:
             length = (verts[ev[0]] - verts[ev[1]]).magnitude
         if length < 1e-6:
-            self.report({'INFO'}, "Zero length edge detected, check block structure!")        
+            self.report({'INFO'}, "Zero length edge detected, check block structure!")
             return{'FINISHED'}
         edge1.length=length
         edge2.length=length
         edgeInfo[(e.verts[0].index,e.verts[1].index)] = edge2
         edgeInfo[(e.verts[1].index,e.verts[0].index)] = edge1
-    NoCells = utils.write(filepath, edges, verts, scn.ctmFloat, 
+    NoCells = utils.write(filepath, edges, verts, scn.ctmFloat,
         patches, polyLines, edgeInfo, vertexNames, disabled, False,stime)
     return NoCells
-    
+
 initProperties()
 
 def register():

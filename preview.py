@@ -19,13 +19,13 @@ class PreviewMesh():
             os.mkdir(self.tempdir+'/0')
             cd = open(self.tempdir+'/system/controlDict','w')
             cd.write(self.header())
-        
+
     def readHeader(self,dicfile):
         numberOfFields = 0
         startLine = False
         with open(dicfile) as fin:
             for lidx,line in enumerate(fin):
-                if not numberOfFields:                
+                if not numberOfFields:
                     try:
                         numberOfFields = int(line)
                     except ValueError:
@@ -34,8 +34,8 @@ class PreviewMesh():
                     startLine = lidx + 1
                     break
         return startLine, numberOfFields
-    
-    def readBoundaries(self,files):      
+
+    def readBoundaries(self,files):
         data = []
         readingField = False
         for line in files:
@@ -45,7 +45,7 @@ class PreviewMesh():
                 readingField = True
             elif not readingField:
                 temp = dict()
-                temp['name']= line.strip()    
+                temp['name']= line.strip()
             elif readingField and 'type' in line:
                 temp['type'] = line.strip().split()[1][:-1]
             elif readingField and 'nFaces' in line:
@@ -58,7 +58,7 @@ class PreviewMesh():
             elif not readingField and line.strip() == ')':
                 break
         return data
-        
+
     def getPoints(self,faces=None):
         pointsFile = self.tempdir +'/constant/polyMesh/points'
         startLine, numberofLines = self.readHeader(pointsFile)
@@ -72,7 +72,7 @@ class PreviewMesh():
             points = points[pidxs]
         points=points.tolist()
         return points
-        
+
     def getFaces(self):
         facesFile = self.tempdir +'/constant/polyMesh/faces'
         startLine, numberofLines = self.readHeader(facesFile)
@@ -83,7 +83,7 @@ class PreviewMesh():
                 converters={0:convertfnc1,3:convertfnc2},dtype=int)
         faces = faces.tolist()
         return faces
-        
+
     def getBCFaces(self,internalCells):
         faces = self.getFaces()
         bcifaces = faces
@@ -101,10 +101,10 @@ class PreviewMesh():
             bcifaces = np.unique(bcifaces.ravel(),return_inverse=True)[1].reshape(bcifaces.shape)
             bcifaces = bcifaces.astype(int).tolist()
         return bcfaces,bcifaces
-    
+
     def runBlockMesh(self):
-        subprocess.call(['blockMesh','-case',self.tempdir])#,stdout=subprocess.PIPE)
-         
+        subprocess.call(['blockMesh','-case',self.tempdir],stdout=subprocess.PIPE)
+
     def generateMesh(self,runBlockMesh=True,internalCells=False):
         if runBlockMesh:
             self.runBlockMesh()
@@ -122,7 +122,7 @@ class PreviewMesh():
         self.previewMesh.select = True
         mesh_data.from_pydata(points, [],bcifaces)
         mesh_data.update()
-#        shutil.rmtree(self.tempdir)
+        shutil.rmtree(self.tempdir)
 
     def header(self):
         return \
@@ -147,6 +147,6 @@ writeInterval   1;
 
 
 
-// ************************************************************************* //        
-        
+// ************************************************************************* //
+
 '''
