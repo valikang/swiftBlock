@@ -103,7 +103,7 @@ class PreviewMesh():
         return bcfaces,bcifaces
 
     def runBlockMesh(self):
-        subprocess.call(['blockMesh','-case',self.tempdir],stdout=subprocess.PIPE)
+        subprocess.call(['blockMesh','-case',self.tempdir])#,stdout=subprocess.PIPE)
 
     def generateMesh(self,runBlockMesh=True,internalCells=False):
         if runBlockMesh:

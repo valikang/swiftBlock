@@ -20,6 +20,7 @@ from bpy.props import *
 import bmesh
 import time
 
+
 def getPolyLines(verts, edges, obj):
     scn = bpy.context.scene
     polyLinesPoints = []
@@ -123,6 +124,61 @@ def getPolyLines(verts, edges, obj):
     geoobj.select = True
     bpy.ops.object.delete()
     return polyLines, polyLinesPoints, polyLinesLengths
+
+def getPolyLines2():
+    # bpy.ops.object.editmode_toggle()
+    # bpy.ops.object.editmode_toggle()
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+    polyLines = ""
+    lengths = dict()
+
+    bmblok = bmesh.new()
+    blockobj = bpy.context.active_object
+    bmblok.from_mesh(blockobj.data)
+
+    bmgeo = bmesh.new()
+    geoobj = bpy.data.objects[bpy.context.scene.geoobjName]
+    bpy.context.scene.objects.active = geoobj
+    bmgeo.from_mesh(geoobj.data)
+
+    snapLinel = bmblok.edges.layers.string.get('snapLine')
+    # bpy.ops.object.mode_set(mode='EDIT')
+    # bpy.ops.object.mode_set(mode='EDIT')
+    if hasattr(bmblok.edges, "ensure_lookup_table"):
+        bmblok.edges.ensure_lookup_table()
+    if hasattr(bmgeo.verts, "ensure_lookup_table"):
+        bmgeo.verts.ensure_lookup_table()
+
+    # print([v.index for v in bm.verts])
+    for e in bmblok.edges:
+        if e[snapLinel] == ''.encode():
+            lengths[e.index] = e.calc_length()
+        else:
+            ind = e.index
+            e0,e1 = e.verts[0].index,e.verts[1].index
+            verts = e[snapLinel].decode().split(' ')
+            verts = [int(v) for v in verts]
+
+            edge_length = 0
+            print(verts[:-1])
+            for i,v in enumerate(verts[:-1]):
+                v1=bmgeo.verts[verts[i]].co
+                v2=bmgeo.verts[verts[i+1]].co
+                edge_length+=(v1-v2).length
+                lengths[ind]=edge_length
+            polyLineStr = ""
+            for v in verts:
+                polyLineStr+="({} {} {})".format(\
+                    bmgeo.verts[v].co[0],bmgeo.verts[v].co[1],bmgeo.verts[v].co[2])
+            polyLines += 'polyLine {} {} ( {} )\n'.format(\
+                    e0,e1,polyLineStr)
+        # bpy.context.scene.objects.active = blockobj
+        # bpy.ops.object.mode_set(mode='EDIT')
+        # bpy.ops.object.mode_set(mode='EDIT')
+        # bmgeo = bmesh.from_edit_mesh(blockobj.data)
+    print('PolyLines: ',polyLines)
+    return polyLines, lengths
 
 def sortedVertices(verts,edges,startVert):
     sorted = []
@@ -408,6 +464,67 @@ class OBJECT_OT_nosnapEdge(bpy.types.Operator):
         return {'RUNNING_MODAL'}
 
 
+class OBJECT_OT_snapEdgetoLine(bpy.types.Operator):
+    '''snap edge to line (bezier)'''
+    bl_idname = "snap.edgetoline"
+    bl_label = "snapedgetoline"
+
+    def invoke(self, context, event):
+        self.block_obj = context.active_object
+        # bpy.ops.object.mode_set(mode='EDIT')
+        bm = bmesh.from_edit_mesh(self.block_obj.data)
+        self.edge = -1
+        for e in bm.edges:
+            if e.select and self.edge == -1:
+                self.edge = e.index
+            elif e.select and self.edge != -1:
+                self.report({'INFO'}, "Select only one edge")
+                return{'CANCELLED'}
+        if not self.edge:
+            self.report({'INFO'}, "Select one edge")
+            return{'CANCELLED'}
+        snapLinel = bm.edges.layers.string.get('snapLine')
+        if bm.edges[self.edge][snapLinel] != ''.encode():
+            snapVerts = bm.edges[self.edge][snapLinel].decode().split(' ')
+        scn = context.scene
+        self.block_obj.select = False
+        self.geo_obj = bpy.data.objects[scn.geoobjName]
+        scn.objects.active = self.geo_obj
+        bpy.ops.object.editmode_toggle()
+        bpy.ops.object.editmode_toggle()
+        for v in snapVerts:
+            self.geo_obj.data.vertices[int(v)].select = True
+        print(context.window_manager.modal_handler_add(self))
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type == 'LEFTMOUSE':
+            return {'PASS_THROUGH'}
+        elif event.type == 'RIGHTMOUSE':
+            # self.geoobj = context.active_object.data
+            bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.ops.object.mode_set(mode='EDIT')
+            snapVerts = []
+            for v in self.geo_obj.data.vertices:
+                if v.select:
+                    snapVerts.append(str(v.index))
+            print('verts',snapVerts)
+            scn=context.scene
+            scn.objects.active = self.block_obj
+            bpy.ops.object.editmode_toggle()
+            bpy.ops.object.editmode_toggle()
+            bm = bmesh.from_edit_mesh(self.block_obj.data)
+            snapLinel = bm.edges.layers.string.get('snapLine')
+            if hasattr(bm.edges, "ensure_lookup_table"):
+                bm.edges.ensure_lookup_table()
+            bm.edges[self.edge][snapLinel]=' '.join(snapVerts).encode()
+            # printedgeinfo()
+            return {'FINISHED'}
+        if event.type in ('ESC'):
+            print( "cancel")
+            return {'CANCELLED'}
+        return {'RUNNING_MODAL'}
+
 class OBJECT_OT_insertSmoother(bpy.types.Operator):
     '''Inserts a smoother'''
     bl_idname = "insert.smoother"
@@ -531,6 +648,7 @@ class OBJECT_OT_Enable(bpy.types.Operator):
         bm.edges.layers.int.new("cells")
         bm.edges.layers.float.new("time")
         bm.edges.layers.int.new("copyAligned")
+        bm.edges.layers.string.new("snapLine")
         bpy.ops.object.mode_set(mode='OBJECT')
         bm.to_mesh(obj.data)
         bpy.context.tool_settings.use_mesh_automerge = True
@@ -632,7 +750,7 @@ class OBJECT_OT_SetEdge(bpy.types.Operator):
         else:
             self.report({'INFO'}, "No edge(s) selected!")
             return{'CANCELLED'}
-#        printedgeinfo()
+       # printedgeinfo()
         return {'FINISHED'}
 
 def printedgeinfo():
@@ -645,18 +763,19 @@ def printedgeinfo():
     exp2l = bm.edges.layers.float.get('exp2')
     cellsl = bm.edges.layers.int.get('cells')
     maxdxl = bm.edges.layers.float.get('maxdx')
+    snapLinel = bm.edges.layers.string.get('snapLine')
     timel = bm.edges.layers.float.get('time')
     if hasattr(bm.edges, "ensure_lookup_table"):
         bm.edges.ensure_lookup_table()
     string = ''
-    print('{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>12}'.format(\
-    'eidx','ver1','ver2','dx1','dx2','grow1','grow2','maxdx','time'))
+    print('{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>6}{:>12}'.format(\
+    'eidx','ver1','ver2','dx1','dx2','grow1','grow2','maxdx','edges','time'))
     for idx,e in enumerate(bm.edges):
         string += '{:6}{:6}{:6}{:{numbers}.{decimals}g}{:{numbers}.{decimals}g}\
 {:{numbers}.{decimals}g}{:{numbers}.{decimals}g}\
-{:{numbers}.{decimals}g}{:12.0f}'.format(\
+            {:{numbers}.{decimals}g}{:>12}{:12.0f}'.format(\
                   idx,e.verts[0].index,e.verts[1].index,e[dx1l],e[dx2l],\
-                  e[exp1l],e[exp2l],e[maxdxl],e[timel],\
+                  e[exp1l],e[exp2l],e[maxdxl],e[snapLinel].decode(),e[timel],\
                   numbers=6,decimals=2)+'\n'
     print(string)
 
@@ -1025,8 +1144,13 @@ def writeBMD(filepath, showAll=True):
     bpy.ops.object.mode_set(mode='OBJECT')
 
     obj.select = False
+    newPolyLines = True
+    # newPolyLines = False
     if scn.setEdges:
-        polyLines, polyLinesPoints, lengths = getPolyLines(verts, edges, obj)
+        if newPolyLines:
+            polyLines, lengths = getPolyLines2()
+        else:
+            polyLines, polyLinesPoints, lengths = getPolyLines(verts, edges, obj)
     else:
         polyLines = ''
         lengths = [[], []]
@@ -1070,25 +1194,30 @@ def writeBMD(filepath, showAll=True):
         edge2.copyAligned=e[copyAlignedl]
         edge2.inverse=False
 
-        # There must be one edge with largest fraction for blockMesh.
         if edge1.dx1>0 and edge1.exp1>1 and edge1.dx1 == edge1.dx2\
             and edge1.exp1== edge1.exp2:
             edge1.dx1 += 1.e-6
             edge2.dx2 += 1.e-6
-        ev = list([e.verts[0].index,e.verts[1].index])
-        if ev in lengths[0]:
-            ind = lengths[0].index(ev)
-            length = lengths[1][ind]
-        elif [ev[1],ev[0]] in lengths[0]:
-            ind = lengths[0].index([ev[1],ev[0]])
-            length = lengths[1][ind]
+        # There must be one edge with largest fraction for blockMesh.
+        if not newPolyLines:
+            ev = list([e.verts[0].index,e.verts[1].index])
+            if ev in lengths[0]:
+                ind = lengths[0].index(ev)
+                length = lengths[1][ind]
+            elif [ev[1],ev[0]] in lengths[0]:
+                ind = lengths[0].index([ev[1],ev[0]])
+                length = lengths[1][ind]
+            else:
+                length = (verts[ev[0]] - verts[ev[1]]).magnitude
+            if length < 1e-6:
+                self.report({'INFO'}, "Zero length edge detected, check block structure!")
+                return{'FINISHED'}
+            edge1.length=length
+            edge2.length=length
         else:
-            length = (verts[ev[0]] - verts[ev[1]]).magnitude
-        if length < 1e-6:
-            self.report({'INFO'}, "Zero length edge detected, check block structure!")
-            return{'FINISHED'}
-        edge1.length=length
-        edge2.length=length
+            edge1.length=lengths[e.index]
+            edge2.length=lengths[e.index]
+
         edgeInfo[(e.verts[0].index,e.verts[1].index)] = edge2
         edgeInfo[(e.verts[1].index,e.verts[0].index)] = edge1
     NoCells = utils.write(filepath, edges, verts, scn.ctmFloat,
