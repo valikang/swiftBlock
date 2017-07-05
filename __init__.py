@@ -1294,18 +1294,22 @@ class BuildBlocking(bpy.types.Operator):
         # find blocking
         log, block_verts, dependent_edges, face_info, all_edges, faces_as_list_of_nodes = utils.blockFinder(edges,verts, '','', [])
 
-        # KOPIOI 1
         # Save the blocking for previewing
         ob.block_verts.clear()
         for bv in block_verts:
             b = ob.block_verts.add()
             b.block_verts = bv
 
-        # KOPIOI 2 ja funktio
+        ob.dependent_edges.clear()
+        for i, g in enumerate(dependent_edges):
+            for e in g:
+                de = ob.dependent_edges.add()
+                de.dependent_edge = (i, e[0], e[1])
+
+
         # align the edge blocks into same direction
         align_edges(block_verts, dependent_edges)
 
-        # KOPIOI 3 (ei valttamaton)
         # remove internal faces and build boundary faces
         repair_faces(face_info, faces_as_list_of_nodes)
         return {"FINISHED"}
@@ -1316,6 +1320,14 @@ bpy.utils.register_class(BlockProperty)
 
 bpy.types.Object.block_verts = \
     bpy.props.CollectionProperty(type=BlockProperty)
+
+# List of edges (int v1, int v2, int edgeGroup)
+class DependentEdgesProperty(bpy.types.PropertyGroup):
+    dependent_edge = bpy.props.IntVectorProperty(size = 3)
+bpy.utils.register_class(DependentEdgesProperty)
+
+bpy.types.Object.dependent_edges = \
+    bpy.props.CollectionProperty(type=DependentEdgesProperty)
 
 def edge(e0, e1):
     return [min(e0,e1), max(e0,e1)]
@@ -1540,8 +1552,23 @@ def writeBMD(filepath, showAll=True):
         edge2.length=length
         edgeInfo[(e.verts[0].index,e.verts[1].index)] = edge2
         edgeInfo[(e.verts[1].index,e.verts[0].index)] = edge1
+
+    blocks = []
+    for b in obj.block_verts:
+        blocks.append(list(b.block_verts))
+
+    detemp = []
+    ngroups = 0
+    for de in obj.dependent_edges:
+        detemp.append(list(de.dependent_edge))
+        ngroups = max(ngroups,int(de.dependent_edge[0]))
+
+    dependent_edges = (ngroups+1) * [[]]
+    for e in detemp:
+        dependent_edges[e[0]].append([e[1],e[2]])
+
     NoCells = utils.write(filepath, edges, verts, scn.ctmFloat,
-        patches, polyLines, edgeInfo, vertexNames, disabled, False,stime)
+        patches, polyLines, edgeInfo, vertexNames, disabled, False,stime, blocks, dependent_edges)
     return NoCells
 
 initProperties()

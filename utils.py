@@ -19,11 +19,11 @@
 '''
 '''
 
-import mathutils,time
+import mathutils, time
 import numpy as np
 
 # Writes blockMeshDict to provided path
-def write(filepath, edges, vertices_coord, convertToMeters, patchnames, polyLines, edgeInfo, vertexNames, disabled, logging,stime):
+def write(filepath, edges, vertices_coord, convertToMeters, patchnames, polyLines, edgeInfo, vertexNames, disabled, logging, stime, block_print_out, dependent_edges):
     if logging:
         logFileName = filepath.replace('blockMeshDict','log.swiftblock')
         debugFileName = filepath.replace('blockMeshDict','facesFound.obj')
@@ -36,7 +36,7 @@ def write(filepath, edges, vertices_coord, convertToMeters, patchnames, polyLine
         for vl in pn[2]:
             patchfaces.append(vl)
     # Get the blockstructure, which edges that have the same #of cells, some info on face, and edges-in-use
-    logFile, block_print_out, dependent_edges, face_info, all_edges, faces_as_list_of_nodes = blockFinder(edges, vertices_coord, logFileName, debugFileName, disabled)
+    # logFile, block_print_out2, dependent_edges2, face_info, all_edges, faces_as_list_of_nodes = blockFinder(edges, vertices_coord, logFileName, debugFileName, disabled)
     bmFile = open(filepath,'w')
     bmFile.write(foamHeader())
     bmFile.write("\nconvertToMeters " + str(convertToMeters) + ";\n\nvertices\n(\n")
@@ -79,10 +79,11 @@ def write(filepath, edges, vertices_coord, convertToMeters, patchnames, polyLine
         if not len(pn[2]) == 0:
             bmFile.write('    {} {}\n    (\n'.format(pn[0],pn[1]))
             for pl in pn[2]:
-                fid, tmp = findFace(faces_as_list_of_nodes, pl)
-                if fid >= 0:
-                    if (len(face_info[fid]['neg']) + len(face_info[fid]['pos'])) == 1: #avoid printing internal faces and patches in non-identified blocks as patch
-                        bmFile.write('        ({} {} {} {})\n'.format(*pl))
+                # fid, tmp = findFace(faces_as_list_of_nodes, pl)
+                # if fid >= 0:
+                    # if (len(face_info[fid]['neg']) + len(face_info[fid]['pos'])) == 1: #avoid printing internal faces and patches in non-identified blocks as patch
+                        # bmFile.write('        ({} {} {} {})\n'.format(*pl))
+                bmFile.write('        ({} {} {} {})\n'.format(*pl))
             bmFile.write('    )\n')
 
     bmFile.write(');\n\nedges\n(\n')
