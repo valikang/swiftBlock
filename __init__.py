@@ -767,7 +767,7 @@ class OBJECT_OT_setBoundaryLayerY(bpy.types.Operator):
 
         # remove the object
         for o in bpy.data.objects:
-            if o.type == 'CURVE':
+            if "blflags" in o.name:
                 #print(o.name)
                 cu=o.data
                 scene.objects.unlink(o)
