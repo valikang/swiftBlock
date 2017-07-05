@@ -1,8 +1,8 @@
 bl_info = {
     "name": "SwiftBlock",
-    "author": "Karl-Johan Nogenmyr",
+    "author": "Karl-Johan Nogenmyr, Mikko Folkersma, Turo Välikangas",
     "version": (0, 1),
-    "blender": (2, 7, 5),
+    "blender": (2, 7, 8),
     "api": 44000,
     "location": "Tool Shelf",
     "description": "Writes block geometry as blockMeshDict file",
@@ -19,6 +19,50 @@ import bpy
 from bpy.props import *
 import bmesh
 import time
+from math import fabs, degrees, radians, sqrt, cos, sin, pi
+from mathutils import Vector, Matrix
+
+
+#Here will be the coloring definitions
+def shortenedVector(p1,p2,length):
+    v = (p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2])
+    vlen= sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])
+    vn= (v[0]/vlen,v[1]/vlen,v[2]/vlen )
+    l=length
+    return length,(p1[0]+l*vn[0], p1[1]+l*vn[1],p1[2]+l*vn[2])
+
+
+def createLine(lineName, pointList, thickness,length,blType):
+    sVLength,sV = shortenedVector(pointList[0],pointList[1],length)
+    # setup basic line data
+    theLineData = bpy.data.curves.new(name=lineName,type='CURVE')
+    theLineData.dimensions = '3D'
+    theLineData.fill_mode = 'FULL'
+    theLineData.bevel_depth = 0.1*sVLength*(thickness*thickness)
+    # define points that make the line
+    polyline = theLineData.splines.new('POLY')
+    polyline.points.add(len(pointList)-1)
+    for idx in range(len(pointList)):
+        polyline.points[idx].co = (pointList[idx])+(1.0,)
+    polyline.points[0].co = (pointList[0])+(1.0,)
+    polyline.points[1].co = (sV)+(1.0,)
+
+    # create an object that uses the linedata
+    theLine = bpy.data.objects.new('blflags',theLineData)
+    bpy.context.scene.objects.link(theLine)
+    theLine.location = (0.0,0.0,0.0)
+    
+    # setup a material
+    lmat = bpy.data.materials.new('Linematerial')
+    if blType == "bl1":
+        lmat.diffuse_color = (0.0,0.0,1.0)
+    if blType == "bl2":
+        lmat.diffuse_color = (1.0,0.0,0.0)
+    lmat.use_shadeless = True
+    theLine.data.materials.append(lmat)
+
+####And coloring ends here
+
 
 def getPolyLines(verts, edges, obj):
     scn = bpy.context.scene
@@ -91,7 +135,7 @@ def getPolyLines(verts, edges, obj):
             try:
                 bpy.ops.mesh.select_vertex_path(type='EDGE_LENGTH')
             except:
-                bpy.ops.mesh.shortest_path_select(use_length=True)
+                bpy.ops.mesh.shortest_path_select()
             bpy.ops.object.mode_set(mode='OBJECT')
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.duplicate()
@@ -180,6 +224,57 @@ def initProperties():
         description = "Should edges be fetched from another object?",
         default = False)
 
+    bpy.types.Scene.setGlobalMax = BoolProperty(
+        name = "Set global max",
+        description = "Do you want to set a global maximum cell size.",
+        default = False)
+
+    bpy.types.Scene.setBoundaryLayer = BoolProperty(
+        name = "Set global boundary layer settings",
+        description = "Do you want to set dx and exp for all boundary layer edges?",
+        default = False)
+
+    bpy.types.Scene.setInitBL = BoolProperty(
+        name = "Initialise boundary layer",
+        description = "If boundary layers give you an error, try to initialize them?",
+        default = False)
+    
+    bpy.types.Scene.DeleteBL = BoolProperty(
+        name = "Delete boundary layer flags",
+        description = "If you want to hide all the boundary layer flags press this.",
+        default = False)
+    
+    bpy.types.Scene.globalMax = FloatProperty(
+        name = "global max",
+        description = "Global maximum cell size.",
+        default = 1,
+        min = 1e-6)
+
+    bpy.types.Scene.bldx1 = FloatProperty(
+        name = "dx when bl=1",
+        description = "Global boundary layer cell size at start of edge.",
+        default = 1,
+        min = 1e-6)
+ 
+    bpy.types.Scene.blexp1= FloatProperty(
+        name = "exp when bl=1",
+        description = "Global boundary layer expansion ratio at start of edge.",
+        default = 1,
+        min = 1e-6)
+
+    bpy.types.Scene.bldx2 = FloatProperty(
+        name = "dx when bl=2",
+        description = "Global boundary layer cell size at end of edge.",
+        default = 1,
+        min = 1e-6)
+ 
+    bpy.types.Scene.blexp2 = FloatProperty(
+        name = "exp when bl=2",
+        description = "Global boundary layer expansion ratio at end of edge.",
+        default = 1,
+        min = 1e-6)
+
+
     bpy.types.Scene.geoobjName = StringProperty(
         name = "Object",
         description = "Name of object to get edges from (this box disappears when object is found)",
@@ -238,6 +333,18 @@ def initProperties():
         default = 1,
         min = 1)
 
+    bpy.types.Scene.bl1 = IntProperty(
+        name = "bl1",
+        description = "Do you want to define global boundary layers? 1,2=define global rules, 3=global settings does not apply and 0=no",
+        default = 0,
+        min = 0)
+
+    bpy.types.Scene.bl2 = IntProperty(
+        name = "bl2",
+        description = "Do you want to define global boundary layers? 1,2=define global rules, 3=global settings does not apply and 0=no",
+        default = 0,
+        min = 0)
+
     bpy.types.Scene.cells = IntProperty(
         name = "cells",
         description = "Number of cells",
@@ -290,9 +397,35 @@ class UIPanel(bpy.types.Panel):
 #            col = split.column()
 #            col.prop(scn, 'internalCells')
             layout.operator("find.broken")
+            layout.operator('build.blocking')
             layout.prop(scn, 'ctmFloat')
 #            layout.prop(scn, 'resFloat')
             box = layout.box()
+            box = box.column()
+            box.label(text='Global variables')
+
+            box.prop(scn,'setGlobalMax')
+            if scn.setGlobalMax:
+                box.prop(scn,'globalMax')
+                box = box.column()
+                box.operator('set.globalmax')
+
+            box.prop(scn,'setBoundaryLayer')
+            if scn.setBoundaryLayer:
+                box.prop(scn,'bldx1')
+                box.prop(scn,'blexp1')
+                box.prop(scn,'bldx2')
+                box.prop(scn,'blexp2')
+                box = box.column()
+                box.operator('set.boundarylayery')
+                box.prop(scn,'setInitBL')
+                if scn.setInitBL:
+                    box.operator('init.boundarylayer')
+                box.prop(scn,'DeleteBL')
+                if scn.DeleteBL:
+                    box.operator('del.bl')
+                
+
             box = box.column()
 
             box.label(text='Edge settings')
@@ -312,19 +445,26 @@ class UIPanel(bpy.types.Panel):
                     box.separator()
                 except:
                     box.prop(scn, 'geoobjName')
-
+	    
+	    
+	
             box = box.column()
+            box.label(text='dx= cell size at start/end')
+            box.label(text='exp= expansion ratio at start/end')
             split = box.split()
             col = split.column()
-            col.label(text='edge1')
+            col.label(text='Start of edge')
             col.prop(scn, 'dx1')
             col.prop(scn, 'exp1')
+            col.prop(scn, 'bl1')    
             col = split.column()
-            col.label(text='edge2')
+            col.label(text='End of edge')
             col.prop(scn, 'dx2')
             col.prop(scn, 'exp2')
+            col.prop(scn, 'bl2')
 #            box.prop(scn, 'cells')
             box.prop(scn, 'maxdx')
+		
             box.prop(scn, 'copyAligned')
             split = box.split()
             col = split.column()
@@ -527,6 +667,8 @@ class OBJECT_OT_Enable(bpy.types.Operator):
         bm.edges.layers.float.new("dx2")
         bm.edges.layers.float.new("exp1")
         bm.edges.layers.float.new("exp2")
+        bm.edges.layers.int.new("bl1")
+        bm.edges.layers.int.new("bl2")
         bm.edges.layers.float.new("maxdx")
         bm.edges.layers.int.new("cells")
         bm.edges.layers.float.new("time")
@@ -591,6 +733,172 @@ class OBJECT_OT_SetPatchName(bpy.types.Operator):
             return{'CANCELLED'}
         return {'FINISHED'}
 
+class OBJECT_OT_setBoundaryLayerY(bpy.types.Operator):
+    '''Sets cell size in y direction in boundary layer edges'''
+    bl_idname = "set.boundarylayery"
+    bl_label = "Set all boundary layers"
+
+    def execute(self,context):
+        scn = context.scene
+        obj = context.active_object
+        bpy.ops.object.mode_set(mode='EDIT')
+        bm = bmesh.from_edit_mesh(obj.data)
+        dx1l = bm.edges.layers.float.get('dx1')
+        dx2l = bm.edges.layers.float.get('dx2')
+        exp1l = bm.edges.layers.float.get('exp1')
+        exp2l = bm.edges.layers.float.get('exp2')
+        maxdxl = bm.edges.layers.float.get('maxdx')
+        bl1l = bm.edges.layers.int.get('bl1')
+        bl2l = bm.edges.layers.int.get('bl2')
+        timel = bm.edges.layers.float.get('time')
+        copyAlignedl = bm.edges.layers.int.get('copyAligned')
+
+       
+
+
+        # For older versions of Blender
+        if hasattr(bm.edges, "ensure_lookup_table"):
+            bm.edges.ensure_lookup_table()
+        
+         #Curve deleting
+        curves = bpy.data.curves
+        objects = bpy.data.objects
+        scene = bpy.context.scene
+
+        # remove the object
+        for o in bpy.data.objects:
+            if o.type == 'CURVE':
+                #print(o.name)
+                cu=o.data
+                scene.objects.unlink(o)
+                objects.remove(o)
+
+        #Curve deleting ends
+
+        anyselected = False
+
+        for e in bm.edges:
+            if e[bl1l] == 0:
+                e[dx1l] = 0.0;
+                e[exp1l] = 1.0;
+            if e[bl1l] == 1:
+                e[dx1l] = scn.bldx1
+                e[exp1l] = scn.blexp1
+                inboundline = [e.verts[1].co[:], e.verts[0].co[:]]
+                createLine('bl', inboundline, scn.blexp1,scn.bldx1,'bl1')
+            if e[bl1l] == 2:
+                e[dx1l] = scn.bldx2
+                e[exp1l] = scn.blexp2
+                inboundline = [e.verts[1].co[:], e.verts[0].co[:]]
+                createLine('bl', inboundline, scn.blexp2,scn.bldx2,'bl2')
+            if e[bl2l] == 0:
+                e[dx2l] = 0.0;
+                e[exp2l] = 1.0;
+            if e[bl2l] ==1:
+                e[dx2l] = scn.bldx1
+                e[exp2l] = scn.blexp1
+                inboundline = [e.verts[0].co[:], e.verts[1].co[:]]
+                createLine('bl', inboundline, scn.blexp1,scn.bldx1,'bl1')  
+            if e[bl2l] == 2:
+                e[dx2l] = scn.bldx2
+                e[exp2l] = scn.blexp2
+                inboundline = [e.verts[0].co[:], e.verts[1].co[:]]
+                createLine('bl', inboundline, scn.blexp2,scn.bldx2,'bl2')
+            
+            
+            # blender float cannot store very big floats
+           
+        anyselected = True
+        if anyselected:
+            bmesh.update_edit_mesh(obj.data)
+        else:
+            self.report({'INFO'}, "No edge(s) selected!")
+            return{'CANCELLED'}
+#        printedgeinfo()
+        return {'FINISHED'}
+
+
+
+    
+class OBJECT_OT_DeleteBoundaryLayer(bpy.types.Operator):
+    '''Delete boundary layer flags'''
+    bl_idname = "del.bl"
+    bl_label = "Delete boundary layer flags"
+
+    def execute(self, context):
+        scn = context.scene
+        obj = context.active_object
+        bpy.ops.object.mode_set(mode='EDIT')
+        bm = bmesh.from_edit_mesh(obj.data)
+         #Curve deleting
+        curves = bpy.data.curves
+        objects = bpy.data.objects
+        scene = bpy.context.scene
+        # remove the object
+        for o in bpy.data.objects:
+            if "blflags" in o.name:
+                cu=o.data
+                scene.objects.unlink(o)
+                objects.remove(o)
+        #Curve deleting ends
+        return{'FINISHED'}        
+    
+    
+    
+    
+class OBJECT_OT_InitBL(bpy.types.Operator):
+    '''Initialises boundary layer flags'''
+    bl_idname = "init.boundarylayer"
+    bl_label = "Initialise boundary layer flags"
+    def execute(self, context):
+        scn = context.scene
+        obj = context.active_object
+        bpy.ops.object.mode_set(mode='EDIT')
+        bm = bmesh.from_edit_mesh(obj.data)
+        bm.edges.layers.int.new("bl1")
+        bm.edges.layers.int.new("bl2")
+        return{'FINISHED'}
+    
+
+
+
+class OBJECT_OT_GlobalMax(bpy.types.Operator):
+    '''Sets max cell size for all edge(s)'''
+    bl_idname = "set.globalmax"
+    bl_label = "Set globalmax"
+
+    def execute(self,context):
+        scn = context.scene
+        obj = context.active_object
+        bpy.ops.object.mode_set(mode='EDIT')
+        bm = bmesh.from_edit_mesh(obj.data)
+        maxdxl = bm.edges.layers.float.get('maxdx')
+        bl1l = bm.edges.layers.int.get('bl1')
+        bl2l = bm.edges.layers.int.get('bl2')
+       
+       
+        # For older versions of Blender
+        if hasattr(bm.edges, "ensure_lookup_table"):
+            bm.edges.ensure_lookup_table()
+
+        anyselected = False
+        for e in bm.edges:      
+            if e[bl1l] != 3 and e[bl2l] != 3:
+                e[maxdxl] = scn.globalMax
+                
+            
+            
+            # blender float cannot store very big floats
+           
+            anyselected = True
+
+        if anyselected:
+            bmesh.update_edit_mesh(obj.data)
+        else:
+            self.report({'INFO'}, "No edge(s) selected!")
+            return{'CANCELLED'}
+#        printedgeinfo()
+        return {'FINISHED'}
 
 class OBJECT_OT_SetEdge(bpy.types.Operator):
     '''Sets edge(s) properties'''
@@ -605,6 +913,8 @@ class OBJECT_OT_SetEdge(bpy.types.Operator):
         dx2l = bm.edges.layers.float.get('dx2')
         exp1l = bm.edges.layers.float.get('exp1')
         exp2l = bm.edges.layers.float.get('exp2')
+        bl1l = bm.edges.layers.int.get('bl1')
+        bl2l = bm.edges.layers.int.get('bl2')
         cellsl = bm.edges.layers.int.get('cells')
         maxdxl = bm.edges.layers.float.get('maxdx')
         timel = bm.edges.layers.float.get('time')
@@ -621,6 +931,8 @@ class OBJECT_OT_SetEdge(bpy.types.Operator):
                 e[dx2l] = scn.dx2
                 e[exp1l] = scn.exp1
                 e[exp2l] = scn.exp2
+                e[bl1l] = scn.bl1
+                e[bl2l] = scn.bl2
                 e[maxdxl] = scn.maxdx
                 e[cellsl] = scn.cells
                 # blender float cannot store very big floats
@@ -675,6 +987,8 @@ class OBJECT_OT_GetEdge(bpy.types.Operator):
         dx2l = bm.edges.layers.float.get('dx2')
         exp1l = bm.edges.layers.float.get('exp1')
         exp2l = bm.edges.layers.float.get('exp2')
+        bl1l = bm.edges.layers.int.get('bl1')
+        bl2l = bm.edges.layers.int.get('bl2')
         cellsl = bm.edges.layers.int.get('cells')
         maxdxl = bm.edges.layers.float.get('maxdx')
         copyAlignedl = bm.edges.layers.int.get('copyAligned')
@@ -687,6 +1001,8 @@ class OBJECT_OT_GetEdge(bpy.types.Operator):
                 scn.dx2=e[dx2l]
                 scn.exp1=e[exp1l]
                 scn.exp2=e[exp2l]
+                scn.bl1=e[bl1l]
+                scn.bl2=e[bl2l]
                 scn.cells=e[cellsl]
                 scn.maxdx=e[maxdxl]
                 scn.copyAligned=e[copyAlignedl]
@@ -955,7 +1271,140 @@ class OBJECT_OT_writeBMD(bpy.types.Operator):
         return{'FINISHED'}
 
 
+class BuildBlocking(bpy.types.Operator):
+    bl_idname = "build.blocking"
+    bl_label = "align and clean blocking"
+    bl_options = {"UNDO"}
 
+    def invoke(self, context, event):
+        from . import utils
+        # get verts and edges
+        ob = context.active_object
+        mesh = ob.data
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode='EDIT')
+        verts = []
+        edges = []
+        for v in mesh.vertices:
+            verts.append(v.co)
+        for e in mesh.edges:
+            edges.append([e.vertices[0],e.vertices[1]])
+        stime = time.time()
+
+        # find blocking
+        log, block_verts, dependent_edges, face_info, all_edges, faces_as_list_of_nodes = utils.blockFinder(edges,verts, '','', [])
+
+        # KOPIOI 1
+        # Save the blocking for previewing
+        ob.block_verts.clear()
+        for bv in block_verts:
+            b = ob.block_verts.add()
+            b.block_verts = bv
+
+        # KOPIOI 2 ja funktio
+        # align the edge blocks into same direction
+        align_edges(block_verts, dependent_edges)
+
+        # KOPIOI 3 (ei valttamaton)
+        # remove internal faces and build boundary faces
+        repair_faces(face_info, faces_as_list_of_nodes)
+        return {"FINISHED"}
+
+class BlockProperty(bpy.types.PropertyGroup):
+    block_verts = bpy.props.IntVectorProperty(size = 8)
+bpy.utils.register_class(BlockProperty)
+
+bpy.types.Object.block_verts = \
+    bpy.props.CollectionProperty(type=BlockProperty)
+
+def edge(e0, e1):
+    return [min(e0,e1), max(e0,e1)]
+
+def align_edges(block_print_out, dependent_edges):
+    bpy.ops.object.mode_set(mode='OBJECT')
+    edgeDirections = [set() for i in dependent_edges]
+    positiveBlockEdges = [[(0,1),(3,2),(7,6),(4,5)],[(0,3),(1,2),(5,6),(4,7)],[(0,4),(1,5),(2,6),(3,7)]]
+    for i in range(1000):
+        ready = True
+        for ed, de in zip(edgeDirections,dependent_edges):
+            if not len(ed)==len(de):
+                ready = False
+        if ready:
+            break
+        for bid, vl in enumerate(block_print_out):
+            for es, edgeSet in enumerate(dependent_edges):
+                for direction in range(3):
+                    if edge(vl[positiveBlockEdges[direction][0][0]],vl[positiveBlockEdges[direction][0][1]]) in edgeSet:
+                        if not edgeDirections[es]:
+                            edgeDirections[es] = set([(vl[e[0]],vl[e[1]]) for e in positiveBlockEdges[direction]])
+                        else:
+                            simedges = edgeDirections[es].intersection([(vl[e[0]],vl[e[1]]) for e in positiveBlockEdges[direction]])
+                            if simedges:
+                                edgeDirections[es] |= set([(vl[e[0]],vl[e[1]]) for e in positiveBlockEdges[direction]])
+                            else:
+                                asimedges= set(edgeDirections[es]).intersection([(vl[e[1]],vl[e[0]]) for e in positiveBlockEdges[direction]])
+                                if asimedges:
+                                    edgeDirections[es] |= set([(vl[e[1]],vl[e[0]]) for e in positiveBlockEdges[direction]])
+
+    ob = bpy.context.active_object
+    me = ob.data
+    edgelist = dict()
+    for e in me.edges:
+        edgelist[(e.vertices[0],e.vertices[1])] = e.index
+    for ed in edgeDirections:
+        # consistentEdgeDirs(ed)
+        for e in ed:
+            if (e[0],e[1]) not in edgelist:
+                ei = me.edges[edgelist[(e[1],e[0])]]
+                (e0, e1) = ei.vertices
+                ei.vertices = (e1, e0)
+    bpy.ops.object.mode_set(mode='EDIT')
+
+def findFace(faces, vl):
+    for fid, f in enumerate(faces):
+        if vl[0] in f and vl[1] in f and vl[2] in f and vl[3] in f:
+            return fid, f
+    return -1, []
+
+# Kalle's implementation
+def repair_faces(face_info, faces_as_list_of_nodes):
+    ob = bpy.context.active_object
+    bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,False,True)")
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+    for f in ob.data.polygons:
+        fid, tmp = findFace(faces_as_list_of_nodes, f.vertices)
+        if fid >= 0: # face was found in list
+            if (len(face_info[fid]['neg']) + len(face_info[fid]['pos'])) > 1: #this is an internal face
+                f.select = True
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.delete(type='ONLY_FACE')
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(True,False,False)")
+    presentFaces = []
+
+    for f in ob.data.polygons:
+        presentFaces.append(list(f.vertices))
+
+    for faceid, f in enumerate(faces_as_list_of_nodes):
+        if (len(face_info[faceid]['neg']) + len(face_info[faceid]['pos'])) == 1: #this is a boundary face
+            fid, tmp = findFace(presentFaces, f)
+            if fid < 0: # this boundary face does not exist as a blender polygon. lets create one!
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.select_all(action='DESELECT')
+                bpy.ops.object.mode_set(mode='OBJECT')
+                for v in f:
+                    ob.data.vertices[v].select = True
+                bpy.ops.object.mode_set(mode='EDIT')
+                bpy.ops.mesh.edge_face_add()
+                bpy.ops.mesh.tris_convert_to_quads(uvs=False, vcols=False, sharp=False, materials=False)
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='DESELECT')
 def writeBMD(filepath, showAll=True):
     import locale
     from . import utils
