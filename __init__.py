@@ -310,37 +310,37 @@ def initProperties():
         default = False)
 
     bpy.types.Scene.dx1 = FloatProperty(
-        name = "dx1",
+        name = "dx",
         description = "First cell size on first end",
         default = 0,
         min = 0)
 
     bpy.types.Scene.dx2 = FloatProperty(
-        name = "dx2",
+        name = "dx",
         description = "First cell size on second end",
         default = 0,
         min = 0)
 
     bpy.types.Scene.exp1 = FloatProperty(
-        name = "exp1",
+        name = "exp",
         description = "Expansion ratio on first end",
         default = 1,
         min = 1)
 
     bpy.types.Scene.exp2 = FloatProperty(
-        name = "exp2",
+        name = "exp",
         description = "Expansion ratio on second end",
         default = 1,
         min = 1)
 
     bpy.types.Scene.bl1 = IntProperty(
-        name = "bl1",
+        name = "bl",
         description = "Do you want to define global boundary layers? 1,2=define global rules, 3=global settings does not apply and 0=no",
         default = 0,
         min = 0)
 
     bpy.types.Scene.bl2 = IntProperty(
-        name = "bl2",
+        name = "bl",
         description = "Do you want to define global boundary layers? 1,2=define global rules, 3=global settings does not apply and 0=no",
         default = 0,
         min = 0)
