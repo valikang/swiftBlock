@@ -753,13 +753,23 @@ class BuildBlocking(bpy.types.Operator):
         for f in bm.faces:
             faces.append([v.index for v in f.verts])
 
-        decrease = 0
+        
+# A bug in face_info when there are o-grids. The block indices after o-grid block have to be decreased by one.
+        replace_ids = dict()
         block_ids = []
         for key in face_info.keys():
             block_ids.extend(face_info[key]['pos'])
             block_ids.extend(face_info[key]['neg'])
-        if max(block_ids) > len(ob.blocks)-1:
-            decrease = 1
+        block_ids = sorted(set(block_ids))
+        # if -1 in block_ids:
+            # block_ids.remove(-1):
+        nblocks = len(ob.blocks)-1
+
+        decrease = []
+        if nblocks < max(block_ids):
+            for i in range(nblocks):
+                if i not in block_ids:
+                    decrease.append(i)
         ob.block_faces.clear()
         for fid, fn in enumerate(faces_as_list_of_nodes):
             f = ob.block_faces.add()
@@ -767,11 +777,15 @@ class BuildBlocking(bpy.types.Operator):
             f.enabled = True
             f.face_verts = fn
             if face_info[fid]['pos']:
-                f.pos = face_info[fid]['pos'][0] - decrease
+                f.pos = face_info[fid]['pos'][0]
+                dec = sum(x < f.pos for x in decrease)
+                f.pos -= dec
             else:
                 f.pos = -1
             if face_info[fid]['neg']:
-                f.neg = face_info[fid]['neg'][0] - decrease
+                f.neg = face_info[fid]['neg'][0]
+                dec = sum(x < f.neg for x in decrease)
+                f.neg -= dec
             else:
                 f.neg = -1
 

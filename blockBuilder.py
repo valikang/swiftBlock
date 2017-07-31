@@ -101,7 +101,6 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
         logFile = ''
 
     # Use the cycle finder class to find all edges forming quad faces
-    print(len(vertices_coord))
     cycFindFaces = cycleFinder(edges,range(len(vertices_coord)))
     faces_as_list_of_vertices = []
     faces_as_list_of_nodes = []
@@ -147,7 +146,6 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
                         connections_between_faces.append([min(fid1,fid2),max(fid1,fid2)])
 
     # Use these connections to find cycles of connected faces; called faceLoops
-    print(len(faces_as_list_of_vertices))
     cycFindFaceLoops = cycleFinder(connections_between_faces,range(len(faces_as_list_of_vertices)))
 
     #this is the most time consuming step
