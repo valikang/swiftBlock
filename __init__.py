@@ -45,7 +45,7 @@ class InitBlockingObject(bpy.types.Operator):
         bm.edges.layers.float.new("r1")
         bm.edges.layers.float.new("r2")
         bm.edges.layers.float.new("dx")
-        bm.edges.layers.int.new("nodes")
+        bm.edges.layers.int.new("cells")
         bm.edges.layers.int.new("groupid")
         bm.edges.layers.string.new("snapId")
         bm.edges.layers.float.new("time")
@@ -54,7 +54,11 @@ class InitBlockingObject(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='EDIT')
         ob.isblockingObject = True
         context.scene.blocking_object = ob.name
+        bpy.ops.mesh.select_all(action="SELECT")
         bpy.ops.set.patchname('INVOKE_DEFAULT')
+        bpy.ops.mesh.select_all(action="DESELECT")
+        ob.show_all_edges = True
+        ob.show_wire = True
         return {"FINISHED"}
 
 
@@ -130,7 +134,7 @@ def initSwiftBlockProperties():
             items = (("Geometric1","Geometric1","",1),
                      ("Geometric2","Geometric2","",2),))
     bpy.types.Object.Dx = bpy.props.FloatProperty(name="dx", default=1, update=setCellSize, min=0)
-    bpy.types.Object.Nodes = bpy.props.IntProperty(name="Nodes", default=4,  min=2)
+    bpy.types.Object.Cells = bpy.props.IntProperty(name="Cells", default=10,  min=2)
     bpy.types.Object.x1 = bpy.props.FloatProperty(name="x1", default=0, description="First cell size", min=0)
     bpy.types.Object.x2 = bpy.props.FloatProperty(name="x2", default=0, description="Last cell size",  min=0)
     bpy.types.Object.r1 = bpy.props.FloatProperty(name="r1", default=1.2, description="First boundary layer geometric ratio", min=1.0)
@@ -191,6 +195,15 @@ class SwiftBlockPanel(bpy.types.Panel):
             box.operator("init.blocking", text="Initialize blocking")
 
         elif context.active_object and bpy.context.active_object.mode == "EDIT":
+
+            box = self.layout.box()
+            box.operator("build.blocking", text="Build Blocking")
+
+            split = box.split()
+            split.operator("preview.mesh", text="Preview mesh")
+            split = split.split()
+            split.operator("write.mesh", text="Write mesh")
+
             box = self.layout.box()
             box.label("Automatic snapping")
             if ob.Autosnap:
@@ -203,14 +216,6 @@ class SwiftBlockPanel(bpy.types.Panel):
                     box.operator("activate.snapping", text="Activate")
             else:
                 box.prop(ob, "Autosnap")
-
-            box = self.layout.box()
-            box.operator("build.blocking", text="Build Blocking")
-
-            split = box.split()
-            split.operator("preview.mesh", text="Preview mesh")
-            split = split.split()
-            split.operator("write.mesh", text="Write mesh")
 
             # box.label("Snapping")
             # split = box.split()
@@ -227,7 +232,7 @@ class SwiftBlockPanel(bpy.types.Panel):
                 # box.prop(scn, "Dx")
             split = box.split()
             col = split.column()
-            col.prop(ob, "Nodes")
+            col.prop(ob, "Cells")
             col.label("Start")
             col.prop(ob, "x1")
             col.prop(ob, "r1")
@@ -583,7 +588,7 @@ class SetEdge(bpy.types.Operator):
         x2l = bm.edges.layers.float.get('x2')
         r1l = bm.edges.layers.float.get('r1')
         r2l = bm.edges.layers.float.get('r2')
-        nodesl = bm.edges.layers.int.get('nodes')
+        cellsl = bm.edges.layers.int.get('cells')
 
         for e in bm.edges:
             if e.select:
@@ -593,7 +598,7 @@ class SetEdge(bpy.types.Operator):
                         # if i[groupl] == groupid:
                             # i.select = True
                 e[typel] = str.encode(ob.MappingType)
-                e[nodesl] = ob.Nodes
+                e[cellsl] = ob.Cells
                 e[x1l] = ob.x1
                 e[x2l] = ob.x2
                 e[r1l] = ob.r1
@@ -610,14 +615,14 @@ def setCellSize(self, context):
     x2l = bm.edges.layers.float.get('x2')
     r1l = bm.edges.layers.float.get('r1')
     r2l = bm.edges.layers.float.get('r2')
-    nodesl = bm.edges.layers.int.get('nodes')
+    cellsl = bm.edges.layers.int.get('cells')
 
     for e in bm.edges:
         if e.select:
             e[typel] = str.encode(ob.MappingType)
             L = (e.verts[0].co-e.verts[1].co).length
             N=utils.getNodes(ob.x1,ob.x2,ob.r1,ob.r2,L,ob.Dx)
-            e[nodesl] = N
+            e[cellsl] = N
             e[x1l] = ob.x1
             e[x2l] = ob.x2
             e[r1l] = ob.r1
@@ -705,7 +710,7 @@ class BuildBlocking(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='EDIT')
         verts = []
         edges = []
-        # edgeDict turha taalla?
+
         edgeDict = dict()
         for v in mesh.vertices:
             verts.append(v.co)
@@ -802,8 +807,8 @@ def writeMesh(ob, filename = ''):
     bpy.ops.object.mode_set(mode='OBJECT')
 
     ob.select = False
-    if ob.Autosnap:
-        polyLines, polyLinesPoints, lengths = getPolyLines(verts,edges,ob)
+    if ob.Autosnap and ob.SnapObject:
+        polyLines, polyLinesPoints, lengths = getPolyLines(verts, edges, ob)
     else:
         polyLines = []
         lengths = [[]]
@@ -841,6 +846,8 @@ def writeMesh(ob, filename = ''):
         if f.enabled:
             block_faces.append(list(f.face_verts))
 
+    selected_edges = [e.select for e in ob.data.edges]
+
     patchnames = list()
     patchtypes = list()
     patchverts = list()
@@ -867,6 +874,13 @@ def writeMesh(ob, filename = ''):
         patches.append([pt])
         patches[ind].append(patchnames[ind])
         patches[ind].append(patchverts[ind])
+
+# return edge selection
+    bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.object.mode_set(mode='OBJECT')
+    for e,sel in zip(ob.data.edges,selected_edges):
+        e.select = sel
+
 ### This is everything that is related to blockMesh so a new multiblock mesher could be introduced easily just by creating new preview file ###
     from . import preview
     importlib.reload(preview)
@@ -904,6 +918,7 @@ class WriteMesh(bpy.types.Operator):
     def execute(self, context):
         ob = context.active_object
         mesh, cells = writeMesh(ob, self.filepath)
+        bpy.ops.object.mode_set(mode='EDIT')
         self.report({'INFO'}, "Cells in mesh: " + str(cells))
         return {"FINISHED"}
 
@@ -926,6 +941,7 @@ class PreviewMesh(bpy.types.Operator):
 # Kalle's implementation
 def repair_faces(face_info, faces_as_list_of_nodes):
     ob = bpy.context.active_object
+
     bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,False,True)")
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='DESELECT')
@@ -962,6 +978,7 @@ def repair_faces(face_info, faces_as_list_of_nodes):
                 bpy.ops.mesh.tris_convert_to_quads(uvs=False, vcols=False, sharp=False, materials=False)
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='DESELECT')
+    bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
 
 
 def get_snap_vertices(bob):
@@ -1006,13 +1023,12 @@ def collectEdges(bob, lengths):
     layers = bm.edges.layers
     snapIdl = layers.string.get('snapId')
     block_edges = dict()
+
     def getDefault(e, var, prop):
         if type(prop) is float:
             val = e[layers.float.get(var)]
         elif type(prop) is int:
             val = e[layers.int.get(var)]
-        if val == 0:
-            val = prop
         return val
 
     for e in bm.edges:
@@ -1024,12 +1040,18 @@ def collectEdges(bob, lengths):
         else:
             L = (e.verts[0].co-e.verts[1].co).length
         be["type"] = e[layers.string.get("type")].decode()
-        be["x1"] = getDefault(e, "x1", bob.x1)
-        be["x2"] = getDefault(e, "x2", bob.x2)
-        be["r1"] = getDefault(e, "r1", bob.r1)
-        be["r2"] = getDefault(e, "r2", bob.r2)
-        be["N"] = getDefault(e, "nodes", bob.Nodes)
+        be["x1"] = e[layers.float.get('x1')] #getDefault(e, "x1", bob.x1)
+        be["x2"] = e[layers.float.get('x2')] #getDefault(e, "x2", bob.x2)
+        be["r1"] = e[layers.float.get('r1')] #getDefault(e, "r1", bob.r1)
+        be["r2"] = e[layers.float.get('r2')] #getDefault(e, "r2", bob.r2)
+        be["N"] = e[layers.int.get('cells')] #getDefault(e, "nodes", bob.Nodes)
         be["L"] = L
+        if not be["N"]:
+            be["N"] = 10
+        if not be["r1"]:
+            be["r1"] = 1.
+        if not be["r2"]:
+            be["r2"] = 1.
         be = utils.edgeMapping(be)
         block_edges[(e.verts[0].index,e.verts[1].index)] = be
         be = dict(be)
