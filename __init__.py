@@ -23,8 +23,8 @@ importlib.reload(utils)
 
 #blocking object name
 bpy.types.Object.isblockingObject = bpy.props.BoolProperty(default=False)
-bpy.types.Scene.blocking_object = bpy.props.StringProperty(default="")
-bpy.types.Object.preview_object = bpy.props.StringProperty(default="")
+bpy.types.Object.blocking_object = bpy.props.StringProperty(default="")
+# bpy.types.Object.preview_object = bpy.props.StringProperty(default="")
 bpy.types.Object.ispreviewObject = bpy.props.BoolProperty(default=False)
 
 
@@ -71,6 +71,7 @@ class ActivateSnap(bpy.types.Operator):
         scn = context.scene
         ob = context.active_object
         pob = bpy.data.objects[ob.SnapObject]
+        pob.blocking_object = ob.name
         blender_utils.activateObject(pob, False)
         return {'FINISHED'}
 
@@ -83,8 +84,9 @@ class ActivateBlocking(bpy.types.Operator):
 
     def invoke(self, context, event):
         scn = context.scene
-        ob = bpy.data.objects[scn.blocking_object]
-        blender_utils.activateObject(ob, self.hide)
+        ob = context.active_object
+        bob = bpy.data.objects[ob.blocking_object]
+        blender_utils.activateObject(bob, self.hide)
         return {'FINISHED'}
 
 # Get all objects in current context
@@ -134,12 +136,12 @@ def initSwiftBlockProperties():
             items = (("Geometric1","Geometric1","",1),
                      ("Geometric2","Geometric2","",2),))
     bpy.types.Object.Dx = bpy.props.FloatProperty(name="dx", default=1, update=setCellSize, min=0)
-    bpy.types.Object.Cells = bpy.props.IntProperty(name="Cells", default=10,  min=2)
+    bpy.types.Object.Cells = bpy.props.IntProperty(name="Cells", default=10,  min=1)
     bpy.types.Object.x1 = bpy.props.FloatProperty(name="x1", default=0, description="First cell size", min=0)
     bpy.types.Object.x2 = bpy.props.FloatProperty(name="x2", default=0, description="Last cell size",  min=0)
     bpy.types.Object.r1 = bpy.props.FloatProperty(name="r1", default=1.2, description="First boundary layer geometric ratio", min=1.0)
     bpy.types.Object.r2 = bpy.props.FloatProperty(name="r2", default=1.2, description="Last boundary layer geometric ratio", min=1.0)
-    bpy.types.Object.CopyAligned = bpy.props.BoolProperty(name="copyAligned", default=False, description="copy parameters to aligned edges")
+    # bpy.types.Object.CopyAligned = bpy.props.BoolProperty(name="copyAligned", default=False, description="copy parameters to aligned edges")
     bpy.types.Object.EdgeGroupName = bpy.props.StringProperty(
         name = "Name",default="group name",
         description = "Specify name of edge group")
@@ -188,7 +190,8 @@ class SwiftBlockPanel(bpy.types.Panel):
         if ob.ispreviewObject:
             box = self.layout.box()
             box.operator("activate.blocking", text="Activate blocking").hide = True
-        elif scn.blocking_object in bpy.data.objects and ob.name != scn.blocking_object:
+        # elif scn.blocking_object in bpy.data.objects and ob.name != scn.blocking_object:
+        elif ob.blocking_object and ob.name != scn.blocking_object:
             box = self.layout.box()
             box.operator("activate.blocking", text="Activate blocking").hide = False
         elif not ob.isblockingObject:
@@ -243,7 +246,8 @@ class SwiftBlockPanel(bpy.types.Panel):
             col.label("End")
             col.prop(ob, "x2")
             col.prop(ob, "r2")
-            col.operator("select.aligned")
+            col.operator("get.edge")
+            box.operator("select.aligned")
             split = box.split()
             # split.operator("edge.mapping", text="Set edge")
             # split = split.split()
@@ -558,7 +562,7 @@ class OBJECT_OT_GetPatch(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='OBJECT')
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,False,True)")
-        bpy.ops.mesh.select_all(action='DESELECT')
+        # bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.object.mode_set(mode='OBJECT')
         mat = bpy.data.materials[self.whichPatch]
         patchindex = list(ob.data.materials).index(mat)
@@ -603,6 +607,35 @@ class SetEdge(bpy.types.Operator):
                 e[x2l] = ob.x2
                 e[r1l] = ob.r1
                 e[r2l] = ob.r2
+        return {'FINISHED'}
+
+class SetEdge(bpy.types.Operator):
+    bl_idname = "get.edge"
+    bl_label = "Get edge"
+    bl_options = {"UNDO"}
+
+    def execute(self, context):
+        ob = context.active_object
+        scn = context.scene
+        if not ob.blocks:
+            bpy.ops.build.blocking('INVOKE_DEFAULT')
+
+        bm = bmesh.from_edit_mesh(ob.data)
+        typel = bm.edges.layers.string.get('type')
+        x1l = bm.edges.layers.float.get('x1')
+        x2l = bm.edges.layers.float.get('x2')
+        r1l = bm.edges.layers.float.get('r1')
+        r2l = bm.edges.layers.float.get('r2')
+        cellsl = bm.edges.layers.int.get('cells')
+
+        for e in bm.edges:
+            if e.select:
+                # e[typel] = str.encode(ob.MappingType)
+                 ob.Cells = e[cellsl]
+                 ob.x1 = e[x1l]
+                 ob.x2 = e[x2l]
+                 ob.r1 = e[r1l]
+                 ob.r2 = e[r2l]
         return {'FINISHED'}
 
 def setCellSize(self, context):
@@ -816,7 +849,12 @@ class BuildBlocking(bpy.types.Operator):
 # Build the mesh from already existing blocking
 def writeMesh(ob, filename = ''):
     verts = list(blender_utils.vertices_from_mesh(ob))
-    edges = list(blender_utils.edges_from_mesh(ob))
+    # edges = list(blender_utils.edges_from_mesh(ob))
+    bm = bmesh.from_edit_mesh(ob.data)
+    edges = []
+    for e in bm.edges:
+        if len(e.link_faces) == 2:
+            edges.append((e.verts[0].index, e.verts[1].index))
 
     bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -826,7 +864,6 @@ def writeMesh(ob, filename = ''):
     else:
         polyLines = []
         lengths = [[]]
-
     verts = []
     matrix = ob.matrix_world.copy()
     for v in ob.data.vertices:
@@ -903,6 +940,7 @@ def writeMesh(ob, filename = ''):
     else:
         mesh = preview.PreviewMesh()
     cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, dependent_edges, block_faces)
+    bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
 ###############################################################
     return mesh, cells
 
@@ -1085,6 +1123,7 @@ def collectEdges(bob, lengths):
         # else:
             # be["verts"] = (e.verts[0].co,e.verts[1].co)
     return block_edges
+
 
 # Kalle's implementation
 def getPolyLines(verts, edges, bob):
