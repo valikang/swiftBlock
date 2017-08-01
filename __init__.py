@@ -171,6 +171,30 @@ def initSwiftBlockProperties():
     bpy.types.Object.edge_groups = \
         bpy.props.CollectionProperty(type=EdgeGroupProperty)
 
+class block_items(bpy.types.UIList):
+
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        split = layout.split(0.6)
+        block = context.active_object.blocks[index]
+        name = block.name
+        c = split.operator("edit.block", name, emboss=False)
+        c.blockid = index
+        c.name = name
+        split.label("%d" % (index))
+        # split.prop(item, "name", text="", emboss=False, translate=False)#, icon='BORDER_RECT')
+
+        if block.enabled:
+            c = split.operator('enable.block', '',emboss=False,icon="CHECKBOX_HLT").blockid = index
+        else:
+            c = split.operator('enable.block','', emboss=False,icon="CHECKBOX_DEHLT").blockid = index
+        # split.prop(item, "enabled", text="")
+
+    def invoke(self, context, event):
+        pass   
+
+# bpy.types.Scene.custom = bpy.types.CollectionProperty(type=CustomProp)
+bpy.types.Scene.block_index = bpy.props.IntProperty()
+
 # Create the swiftBlock panel
 class SwiftBlockPanel(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
@@ -263,27 +287,28 @@ class SwiftBlockPanel(bpy.types.Panel):
                 col.operator('del.edgegroup', 'delete').egName = eg.group_name
             box = self.layout.box()
             box.label("Blocks")
-            split = box.split(percentage=0.5, align=True)
-            col = split.column()
-            col.label("Name")
-            col = split.column()
-            col.label("Id")
-            col = split.column()
+            box.template_list("block_items", "", ob, "blocks", scn, "block_index", rows=2)
+            # split = box.split(percentage=0.5, align=True)
+            # col = split.column()
+            # col.label("Name")
+            # col = split.column()
+            # col.label("Id")
+            # col = split.column()
 
-            for i,bv in enumerate(ob.blocks):
-                split = box.split(percentage=0.5, align=True)
-                col = split.column()
-                c = col.operator("edit.block", ob.blocks[i].name, emboss=False)
-                c.blockid = i
-                c.name = ob.blocks[i].name
+            # for i,bv in enumerate(ob.blocks):
+                # split = box.split(percentage=0.5, align=True)
+                # col = split.column()
+                # c = col.operator("edit.block", ob.blocks[i].name, emboss=False)
+                # c.blockid = i
+                # c.name = ob.blocks[i].name
 
-                col = split.column()
-                col.label(str(i))
-                col = split.column()
-                if bv.enabled:
-                    c = col.operator('enable.block', 'enabled').blockid = i
-                else:
-                    c = col.operator('enable.block', 'disabled').blockid = i
+                # col = split.column()
+                # col.label(str(i))
+                # col = split.column()
+                # if bv.enabled:
+                    # c = col.operator('enable.block', 'enabled').blockid = i
+                # else:
+                    # c = col.operator('enable.block', 'disabled').blockid = i
 
             box = self.layout.box()
             box.prop(ob, 'patchName')
@@ -555,6 +580,15 @@ class OBJECT_OT_GetPatch(bpy.types.Operator):
     bl_label = "Get patch"
 
     whichPatch = bpy.props.StringProperty()
+    shiftDown = False
+
+    def invoke(self, context, event):
+        if event.shift:
+            self.shiftDown = True
+        else:
+            self.shiftDown = False
+        self.execute(context)
+        return {'FINISHED'}
 
     def execute(self, context):
         scn = context.scene
@@ -562,7 +596,8 @@ class OBJECT_OT_GetPatch(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='OBJECT')
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,False,True)")
-        # bpy.ops.mesh.select_all(action='DESELECT')
+        if not self.shiftDown:
+            bpy.ops.mesh.select_all(action='DESELECT')
         bpy.ops.object.mode_set(mode='OBJECT')
         mat = bpy.data.materials[self.whichPatch]
         patchindex = list(ob.data.materials).index(mat)
