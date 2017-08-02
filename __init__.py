@@ -288,14 +288,15 @@ class SwiftBlockPanel(bpy.types.Panel):
             else:
                 box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_DEHLT").show=True
             box.operator("flip.edge")
+            box.label('Edge groups')
             box.prop(ob, 'EdgeGroupName')
             box.operator("set.edgegroup")
             for eg in ob.edge_groups:
-                split = box.split(percentage=0.5, align=True)
+                split = box.split(percentage=0.8, align=True)
                 col = split.column()
                 col.operator("get.edgegroup", eg.group_name , emboss=False).egName = eg.group_name
                 col = split.column()
-                col.operator('del.edgegroup', 'delete').egName = eg.group_name
+                col.operator('del.edgegroup', '',emboss=False,icon='X').egName = eg.group_name
             box = self.layout.box()
             box.label("Blocks")
             box.template_list("block_items", "", ob, "blocks", scn, "block_index", rows=2)
@@ -355,8 +356,9 @@ class EdgeSelectAligned(bpy.types.Operator):
         return {'FINISHED'}
 
 class FlipEdge(bpy.types.Operator):
+    "Flips aligned edges, select only one edge per group"
     bl_idname = "flip.edge"
-    bl_label = "Flips all aligned edges"
+    bl_label = "Flips edges"
 
     def execute(self, context):
         ob = context.active_object
@@ -369,11 +371,13 @@ class FlipEdge(bpy.types.Operator):
                 for i in bm.edges:
                     if i[groupl] == groupid:
                         flip_edges.append(i.index)
+        bpy.ops.object.mode_set(mode='OBJECT')
         for fe in flip_edges:
             e = ob.data.edges[fe]
-            e.vertices = e.vertices[1],e.vertices[0]
-        bpy.ops.object.mode_set(mode='OBJECT')
+            (e0,e1) = e.vertices
+            e.vertices = (e1,e0)
         bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.draw.directions('INVOKE_DEFAULT')
         return {'FINISHED'}
 
 class EditBlock(bpy.types.Operator):
