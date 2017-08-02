@@ -19,7 +19,7 @@
 # <pep8 compliant>
 
 import bpy
-from mathutils import Vector, Matrix
+from mathutils import Vector, Matrix, Euler
 import bgl
 import bmesh
 
@@ -69,81 +69,6 @@ def activateObject(ob, hideCurrent = False):
     bpy.context.scene.objects.active = ob
     bpy.ops.object.mode_set(mode='EDIT')
 
-arrow_head = [
-    [-1,-1],
-    [0,0],
-    [1,-1],
-]
-def draw_arrow_head(ob, vecFrom, vecTo):
-    if ob is None:
-        return
-
-    direction = Vector(vecTo) - Vector(vecFrom)
-    direction.resize_2d()
-    angle = direction.angle(Vector((0,1)))
-
-    # form a 2d rotation matrix
-    mat = Matrix().Rotation(angle, 2)
-
-    # middle point
-    middle = (Vector(vecTo) + Vector(vecFrom)) / 2.0
-    bgl.glEnable(bgl.GL_BLEND)
-    bgl.glColor4f(0.0,0.0,0.0,0.5)
-    bgl.glLineWidth(2)
-
-    bgl.glBegin(bgl.GL_LINE_STRIP)
-    for v in arrow_head:
-        xy = Vector(v)* 4.0 * mat
-        xy.resize_3d()
-        newPos = xy + middle
-        print(newPos)
-        bgl.glVertex3f(*newPos)
-    bgl.glEnd()
-
-def draw_edge_direction(self,context):
-    ob = bpy.context.active_object
-    if ob is None:
-        return
-    if bpy.context.active_object.mode != 'EDIT':
-        return
-    me = ob.data
-    bm = bmesh.from_edit_mesh(me)
-    for e in bm.edges:
-        draw_arrow_head(ob, e.verts[0].co, e.verts[1].co)
-
-class EdgeVisualiser(bpy.types.Operator):
-    bl_idname = "edge.visualiser"
-    bl_label = "Edge Visualiser"
-    bl_description = "Show edge directions"
-
-    _handle = None
-
-    @classmethod
-    def poll(cls, context):
-        return context.mode == "EDIT_MESH"
-
-    def modal(self, context, event):
-        context.area.tag_redraw()
-        if context.area:
-
-        # removal of callbacks when operator is called again
-        # if context.scene.display_indices == -1:
-            # bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
-            # context.scene.display_indices = 0
-            return {"CANCELLED"}
-
-        return {"PASS_THROUGH"}
-
-    def invoke(self, context, event):
-        if context.area.type == "VIEW_3D":
-            # operator is called for the first time, start everything
-            self._handle = bpy.types.SpaceView3D.draw_handler_add(draw_edge_direction, (self, context), 'WINDOW', 'POST_PIXEL')
-            context.window_manager.modal_handler_add(self)
-            return {"RUNNING_MODAL"}
-        else:
-            self.report({"WARNING"}, "View3D not found, can't run operator")
-            return {"CANCELLED"}
-
 
 def previewMesh(ob, points, faces):
     blocking = ob
@@ -164,6 +89,7 @@ def previewMesh(ob, points, faces):
         bpy.data.meshes.remove(oldme)
     previewMeshOb.hide = False
     previewMeshOb.select = True
+    previewMeshOb.blocking_object = blocking.name
     mesh_data.from_pydata(points, [], faces)
     mesh_data.update()
 
@@ -210,3 +136,83 @@ def initDependentEdges(ob):
         # aligned_edges[i] = e[0]
     # print(aligned_edges)
     # for de in dependent_edges:
+
+arrow_head = [
+    [-1,-1],
+    [0,0],
+    [1,-1],
+]
+def draw_arrow_head(ob, vecFrom, vecTo):
+    if ob is None:
+        return
+
+    direction = Vector(vecTo) - Vector(vecFrom)
+    print(direction)
+    # direction.resize_2d()
+    # print(direction)
+    angle = direction.angle(Vector((0,1,0)))
+
+    # form a 2d rotation matrix
+    mat = Matrix().Rotation(angle, 2)
+
+    # middle point
+    middle = (Vector(vecTo) + Vector(vecFrom)) / 2.0
+
+
+    bgl.glEnable(bgl.GL_BLEND)
+    bgl.glBegin(bgl.GL_LINE_STRIP)
+    for v in arrow_head:
+        xy = Vector(v)* 1.0 * mat
+        xy.resize_3d()
+        newPos = xy + middle
+        bgl.glVertex3f(*newPos)
+        bgl.glLineWidth(2)
+        bgl.glColor4f(0.0,0.0,0.0,0.5)
+    bgl.glEnd()
+
+    # bgl.glEnable(bgl.GL_BLEND)
+    # bgl.glBegin(bgl.GL_LINES)
+    # bgl.glVertex3f(*(middle-Vector((1,0,0))))
+    # bgl.glVertex3f(*(middle-Vector((-1,0,0))))
+    # bgl.glVertex3f(*(middle-Vector((0,1,0))))
+    # bgl.glVertex3f(*(middle-Vector((0,-1,0))))
+    # print((middle-Vector((1,0,0))),(middle-Vector((-1,0,0))))
+
+def draw_edge_direction(self,context):
+    ob = bpy.context.active_object
+    if ob is None:
+        return
+    if bpy.context.active_object.mode != 'EDIT':
+        return
+    me = ob.data
+    bm = bmesh.from_edit_mesh(me)
+    # draw_arrow_head(bm.edges[0])
+    bgl.glEnable(bgl.GL_BLEND)
+    for e in bm.edges:
+        draw_arrow_head(ob, e.verts[0].co, e.verts[1].co)
+    bgl.glEnd()
+    bgl.glLineWidth(1)
+    bgl.glDisable(bgl.GL_BLEND)
+    bgl.glColor4f(0.0,0.0,0.0,1.0)
+
+class EdgeVisualiser(bpy.types.Operator):
+    bl_idname = "edge.visualiser"
+    bl_label = "Edge Visualiser"
+    bl_description = "Show edge directions"
+
+    def modal(self, context, event):
+        context.area.tag_redraw()
+        if event.type == 'ESC':
+            bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
+            return {"CANCELLED"}
+        return {"PASS_THROUGH"}
+
+    def invoke(self, context, event):
+        args = (self, context)
+        if context.area.type == "VIEW_3D":
+            self._handle = bpy.types.SpaceView3D.draw_handler_add(draw_edge_direction, args, 'WINDOW', 'POST_VIEW')
+            context.window_manager.modal_handler_add(self)
+            return {"RUNNING_MODAL"}
+        else:
+            self.report({"WARNING"}, "View3D not found, can't run operator")
+            return {"CANCELLED"}

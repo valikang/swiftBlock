@@ -1,6 +1,6 @@
 bl_info = {
     "name": "SwiftBlock",
-    "author": "Karl-Johan Nogenmyr, Mikko Folkersma",
+    "author": "Karl-Johan Nogenmyr, Mikko Folkersma, Turo Valikangas",
     "version": (0, 2),
     "blender": (2, 7, 7),
     "location": "View_3D > Object > SwiftBlock",
@@ -19,13 +19,16 @@ from . import blender_utils
 importlib.reload(blender_utils)
 from . import utils
 importlib.reload(utils)
+from mathutils import Vector
 
 
 #blocking object name
 bpy.types.Object.isblockingObject = bpy.props.BoolProperty(default=False)
 bpy.types.Object.blocking_object = bpy.props.StringProperty(default="")
-# bpy.types.Object.preview_object = bpy.props.StringProperty(default="")
+bpy.types.Object.preview_object = bpy.props.StringProperty(default="")
 bpy.types.Object.ispreviewObject = bpy.props.BoolProperty(default=False)
+bpy.types.Object.direction_object = bpy.props.StringProperty(default="")
+bpy.types.Object.isdirectionObject = bpy.props.BoolProperty(default=False)
 
 
 # Initialize all the bmesh layer properties for the blocking object
@@ -49,11 +52,12 @@ class InitBlockingObject(bpy.types.Operator):
         bm.edges.layers.int.new("groupid")
         bm.edges.layers.string.new("snapId")
         bm.edges.layers.float.new("time")
+        bm.edges.layers.int.new("deactivated")
         bm.faces.layers.int.new("snapId")
         bpy.ops.object.mode_set(mode='OBJECT')
         bpy.ops.object.mode_set(mode='EDIT')
         ob.isblockingObject = True
-        context.scene.blocking_object = ob.name
+        # context.scene.blocking_object = ob.name
         bpy.ops.mesh.select_all(action="SELECT")
         bpy.ops.set.patchname('INVOKE_DEFAULT')
         bpy.ops.mesh.select_all(action="DESELECT")
@@ -93,7 +97,7 @@ class ActivateBlocking(bpy.types.Operator):
 def getObjects(self, context):
     obs = []
     for ob in bpy.data.objects:
-        if ob.type == "MESH" and not ob.isblockingObject and not ob.ispreviewObject:
+        if ob.type == "MESH" and not ob.isblockingObject and not ob.ispreviewObject and not ob.isdirectionObject:
             obs.append((ob.name, ob.name, ''))
     return obs
 
@@ -141,7 +145,7 @@ def initSwiftBlockProperties():
     bpy.types.Object.x2 = bpy.props.FloatProperty(name="x2", default=0, description="Last cell size",  min=0)
     bpy.types.Object.r1 = bpy.props.FloatProperty(name="r1", default=1.2, description="First boundary layer geometric ratio", min=1.0)
     bpy.types.Object.r2 = bpy.props.FloatProperty(name="r2", default=1.2, description="Last boundary layer geometric ratio", min=1.0)
-    # bpy.types.Object.CopyAligned = bpy.props.BoolProperty(name="copyAligned", default=False, description="copy parameters to aligned edges")
+    # bpy.types.Object.ShowEdgeDirections = bpy.props.BoolProperty(name="Show directions", default=True, update = updateDirections, description="Show edge directions?")
     bpy.types.Object.EdgeGroupName = bpy.props.StringProperty(
         name = "Name",default="group name",
         description = "Specify name of edge group")
@@ -149,7 +153,7 @@ def initSwiftBlockProperties():
         items = [('wall', 'wall', 'Defines the patch as wall'),
                  ('patch', 'patch', 'Defines the patch as generic patch'),
                  ('empty', 'empty', 'Defines the patch as empty'),
-                 ('symmetryPlane', 'symmetryPlane', 'Defines the patch as symmetryPlane'),
+                 ('symmetry', 'symmetry', 'Defines the patch as symmetry'),
                  ],
         name = "Patch type")
     bpy.types.Object.patchName = bpy.props.StringProperty(
@@ -231,6 +235,7 @@ class SwiftBlockPanel(bpy.types.Panel):
             split = split.split()
             split.operator("write.mesh", text="Write mesh")
 
+
             box = self.layout.box()
             box.label("Automatic snapping")
             if ob.Autosnap:
@@ -251,6 +256,7 @@ class SwiftBlockPanel(bpy.types.Panel):
             # split.operator("snap.face", text="Face to surface")
 
             box = self.layout.box()
+            # split = box.split()
             box.label("Line Mapping")
             # box.prop(scn, "MappingType")
             # if scn.MappingType == "Geometric1":
@@ -277,6 +283,11 @@ class SwiftBlockPanel(bpy.types.Panel):
             # split = split.split()
             box = self.layout.box()
             box.label("Edges")
+            if 'Edge_directions' in bpy.data.objects:
+                box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_HLT").show=False
+            else:
+                box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_DEHLT").show=True
+            box.operator("flip.edge")
             box.prop(ob, 'EdgeGroupName')
             box.operator("set.edgegroup")
             for eg in ob.edge_groups:
@@ -339,6 +350,28 @@ class EdgeSelectAligned(bpy.types.Operator):
                 for i in bm.edges:
                     if i[groupl] == groupid:
                         i.select = True
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode='EDIT')
+        return {'FINISHED'}
+
+class FlipEdge(bpy.types.Operator):
+    bl_idname = "flip.edge"
+    bl_label = "Flips all aligned edges"
+
+    def execute(self, context):
+        ob = context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+        groupl = bm.edges.layers.int.get('groupid')
+        flip_edges = []
+        for e in bm.edges:
+            if e.select:
+                groupid = e[groupl]
+                for i in bm.edges:
+                    if i[groupl] == groupid:
+                        flip_edges.append(i.index)
+        for fe in flip_edges:
+            e = ob.data.edges[fe]
+            e.vertices = e.vertices[1],e.vertices[0]
         bpy.ops.object.mode_set(mode='OBJECT')
         bpy.ops.object.mode_set(mode='EDIT')
         return {'FINISHED'}
@@ -415,7 +448,6 @@ class EnableBlock(bpy.types.Operator):
 
         block_faces = utils.getBlockFaces(block.block_verts)
         faces_to_remove = []
-        print('Block {} is enabled: {}'.format(self.blockid,block.enabled))
         if block.enabled:
             block.enabled = False
             for f in block_faces:
@@ -876,6 +908,7 @@ class BuildBlocking(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='EDIT')
 
         repair_faces(face_info, faces_as_list_of_nodes)
+        bpy.ops.draw.directions('INVOKE_DEFAULT')
         self.report({'INFO'}, "Number of blocks: {}".format(len(block_verts)))
 		# blender_utils.draw_edge_direction()
         return {"FINISHED"}
@@ -1025,6 +1058,79 @@ class PreviewMesh(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class DrawEdgeDirections(bpy.types.Operator):
+    "Draw edge directions"
+    bl_idname = "draw.directions"
+    bl_label = "draw edge directions"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    show = bpy.props.BoolProperty(default=True)
+    size = bpy.props.FloatProperty(default=0,min=0)
+    verts = bpy.props.IntProperty(default=12,min=0)
+    relativeSize = bpy.props.BoolProperty(default=True)
+
+    def invoke(self, context, event):
+        self.bob = bpy.context.active_object
+        bm = bmesh.from_edit_mesh(self.bob.data)
+        self.edges = [(Vector(e.verts[0].co[:]),Vector(e.verts[1].co[:])) for e in bm.edges]
+        self.lengths = [(e[0]-e[1]).length for e in self.edges]
+        self.size = 0.2
+        self.execute(context)
+        return {"FINISHED"}
+
+
+    def execute(self,context):
+        try:
+            eob = bpy.data.objects['Edge_directions']
+            self.remove(context,eob)
+        except:
+            pass
+        if not self.show:
+            self.bob.direction_object = ''
+            return {"CANCELLED"}
+
+
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.mesh.primitive_cone_add(vertices=self.verts,radius1=0.3,depth=1)#,end_fill_type='NOTHING')
+        default_arrow = context.active_object
+        arrows = []
+        for e,l in zip(self.edges,self.lengths):
+            v1 = Vector(e[0])
+            v2 = Vector(e[1])
+            tob = bpy.data.objects.new("Arrow_duplicate", default_arrow.data.copy())
+            tob.location = v1+0.5*(v2-v1)
+            if self.relativeSize:
+                scale = self.size*l
+            else:
+                scale = self.size
+            tob.scale = (scale,scale,scale)
+            tob.rotation_mode = 'QUATERNION'
+            tob.rotation_quaternion = (v1-v2).to_track_quat('Z','Y')
+            context.scene.objects.link(tob)
+            arrows.append(tob)
+            tob.select = True
+        aob = arrows[0]
+        bpy.context.scene.objects.active = aob
+        aob.name = 'Edge_directions'
+        aob.hide_select = True
+
+        mat = bpy.data.materials.new('black')
+        mat.emit = 2
+        mat.diffuse_color = (0,0,0)
+        bpy.ops.object.material_slot_add()
+        aob.material_slots[-1].material = mat
+        self.remove(context, default_arrow)
+        aob.isdirectionObject = True
+
+        bpy.ops.object.join()
+        bpy.ops.object.shade_smooth()
+        blender_utils.activateObject(self.bob)
+        self.bob.direction_object = aob.name
+        return {"FINISHED"}
+
+    def remove(self, context, ob):
+        context.scene.objects.unlink(ob)
+        bpy.data.objects.remove(ob)
 # Kalle's implementation
 def repair_faces(face_info, faces_as_list_of_nodes):
     ob = bpy.context.active_object
@@ -1140,13 +1246,13 @@ def collectEdges(bob, lengths):
         if not be["r2"]:
             be["r2"] = 1.
         be = utils.edgeMapping(be)
-        block_edges[(e.verts[0].index,e.verts[1].index)] = be
+        block_edges[(e.verts[1].index,e.verts[0].index)] = be
         be = dict(be)
         be["x1"],be["x2"] = be["x2"],be["x1"]
         be["r1"],be["r2"] = be["r2"],be["r1"]
         be = utils.edgeMapping(be)
 
-        block_edges[(e.verts[1].index,e.verts[0].index)] = be
+        block_edges[(e.verts[0].index,e.verts[1].index)] = be
 
         # if e[snapIdl]:
             # verts = snap_vertices[e[snapIdl].decode()]
