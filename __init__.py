@@ -110,17 +110,17 @@ class BlockProperty(bpy.types.PropertyGroup):
 bpy.utils.register_class(BlockProperty)
 
 # List of block edges (int edgeGroup, int v1, int v2)
-class DependentEdgesProperty(bpy.types.PropertyGroup):
+class BlockEdgesProperty(bpy.types.PropertyGroup):
     id = bpy.props.IntProperty()
     v1 = bpy.props.IntProperty()
     v2 = bpy.props.IntProperty()
+    enabled = bpy.props.BoolProperty(default=True)
 # TODO    snapline = bpy.props.IntProperty()
-    # dependent_edge = bpy.props.IntVectorProperty(size = 3)
-bpy.utils.register_class(DependentEdgesProperty)
+bpy.utils.register_class(BlockEdgesProperty)
 
 class BlockFacesProperty(bpy.types.PropertyGroup):
     id = bpy.props.IntProperty()
-    face_verts = bpy.props.IntVectorProperty(size = 4)
+    verts = bpy.props.IntVectorProperty(size = 4)
     pos = bpy.props.IntProperty()
     neg = bpy.props.IntProperty()
     enabled = bpy.props.BoolProperty(default=True)
@@ -164,8 +164,8 @@ def initSwiftBlockProperties():
     bpy.types.Object.blocks = \
         bpy.props.CollectionProperty(type=BlockProperty)
 
-    bpy.types.Object.dependent_edges = \
-        bpy.props.CollectionProperty(type=DependentEdgesProperty)
+    bpy.types.Object.block_edges = \
+        bpy.props.CollectionProperty(type=BlockEdgesProperty)
 
 
     bpy.types.Object.block_faces = \
@@ -371,6 +371,7 @@ class FlipEdge(bpy.types.Operator):
                 for i in bm.edges:
                     if i[groupl] == groupid:
                         flip_edges.append(i.index)
+                break
         bpy.ops.object.mode_set(mode='OBJECT')
         for fe in flip_edges:
             e = ob.data.edges[fe]
@@ -444,8 +445,35 @@ class EnableBlock(bpy.types.Operator):
         scn = context.scene
         ob = context.active_object
         block = ob.blocks[self.blockid]
+
+        if block.enabled:
+            block.enabled = False
+        else:
+            block.enabled = True
+        for f in ob.block_faces:
+            if f.neg == -1 and f.pos == -1:
+                if ob.blocks[f.neg].enabled and not ob.blocks[f.pos].enabled:
+                    f.enabled = True
+                elif ob.blocks[f.pos].enabled and not ob.blocks[f.neg].enabled:
+                    f.enabled = True
+                else:
+                    f.enabled = False
+            elif f.neg == -1 and f.pos != -1 and ob.blocks[f.pos].enabled:
+                f.enabled = True
+            elif f.neg != -1 and f.pos == -1 and ob.blocks[f.pos].enabled:
+                f.enabled = True
+            else:
+                f.enabled = False
+                
+        face_verts = []
+        for f in ob.block_faces:
+            print(f.enabled)
+
+        repair_blockfaces(ob)
+
+        return {'FINISHED'}
         bm = bmesh.from_edit_mesh(ob.data)
-        block_face_verts = [bf.face_verts for bf in ob.block_faces]
+        block_face_verts = [bf.verts for bf in ob.block_faces]
         face_verts = []
         for f in bm.faces:
             face_verts.append([v.index for v in f.verts])
@@ -460,10 +488,10 @@ class EnableBlock(bpy.types.Operator):
                 if (ob.block_faces[fid].neg != -1 and ob.block_faces[fid].pos != -1):
                     if ob.block_faces[fid].pos == self.blockid \
                      and ob.blocks[ob.block_faces[fid].neg].enabled:
-                        bm.faces.new([bm.verts[v] for v in ob.block_faces[fid].face_verts])
+                        bm.faces.new([bm.verts[v] for v in ob.block_faces[fid].verts])
                         ob.block_faces[fid].enabled = True
                     elif ob.blocks[ob.block_faces[fid].pos].enabled:
-                        bm.faces.new([bm.verts[v] for v in reversed(ob.block_faces[fid].face_verts)])
+                        bm.faces.new([bm.verts[v] for v in reversed(ob.block_faces[fid].verts)])
                         ob.block_faces[fid].enabled = True
                     else:
                         bmfid = utils.findFace(face_verts,f)[0]
@@ -491,21 +519,33 @@ class EnableBlock(bpy.types.Operator):
                         ob.block_faces[fid].enabled = False
                     else:
                         if ob.block_faces[fid].neg != -1:
-                            bm.faces.new([bm.verts[v] for v in ob.block_faces[fid].face_verts])
+                            bm.faces.new([bm.verts[v] for v in ob.block_faces[fid].verts])
                             ob.block_faces[fid].enabled = True
                         else:
-                            bm.faces.new([bm.verts[v] for v in reversed(ob.block_faces[fid].face_verts)])
+                            bm.faces.new([bm.verts[v] for v in reversed(ob.block_faces[fid].verts)])
                             ob.block_faces[fid].enabled = True
                 else:
                     if ob.block_faces[fid].neg != -1:
-                        bm.faces.new([bm.verts[v] for v in ob.block_faces[fid].face_verts])
+                        bm.faces.new([bm.verts[v] for v in ob.block_faces[fid].verts])
                         ob.block_faces[fid].enabled = True
                     else:
-                        bm.faces.new([bm.verts[v] for v in reversed(ob.block_faces[fid].face_verts)])
+                        bm.faces.new([bm.verts[v] for v in reversed(ob.block_faces[fid].verts)])
                         ob.block_faces[fid].enabled = True
 
         for f in faces_to_remove:
             bm.faces.remove(f)
+
+        for e in ob.block_edges:
+            be = bm.edges.get((bm.verts[e.v1],bm.verts[e.v2]))
+            if len(be.link_faces) == 0:
+                print(be.index)
+                be.select = True
+                e.enabled = False
+                print('disabled')
+                #disable edge
+            else:
+                e.enabled = True
+                
         bpy.ops.object.mode_set(mode='OBJECT')
         bpy.ops.object.mode_set(mode='EDIT')
         return {'FINISHED'}
@@ -826,7 +866,7 @@ class BuildBlocking(bpy.types.Operator):
             # if not b.enabled:
                 # disabled.extend(b.block_verts)
         # find blocking
-        log, block_verts, dependent_edges, face_info, all_edges, faces_as_list_of_nodes = blockBuilder.blockFinder(edges,verts,disabled = disabled)
+        log, block_verts, block_edges, face_info, all_edges, faces_as_list_of_nodes = blockBuilder.blockFinder(edges,verts,disabled = disabled)
 
         ob.blocks.clear()
         for i,bv in enumerate(block_verts):
@@ -839,12 +879,11 @@ class BuildBlocking(bpy.types.Operator):
         # bm.from_mesh(ob.data)
         groupl = bm.edges.layers.int.get('groupid')
 
-        ob.dependent_edges.clear()
-        for i, g in enumerate(dependent_edges):
+        ob.block_edges.clear()
+        for i, g in enumerate(block_edges):
             for e in g:
                 bm.edges.ensure_lookup_table()
-                de = ob.dependent_edges.add()
-                # de.dependent_edge = (i, e[0], e[1])
+                de = ob.block_edges.add()
                 de.id = i
                 de.v1 = e[0]
                 de.v2 = e[1]
@@ -874,12 +913,13 @@ class BuildBlocking(bpy.types.Operator):
             for i in range(nblocks):
                 if i not in block_ids:
                     decrease.append(i)
+
         ob.block_faces.clear()
         for fid, fn in enumerate(faces_as_list_of_nodes):
             f = ob.block_faces.add()
             f.id = utils.findFace(faces,fn)[0]
             f.enabled = True
-            f.face_verts = fn
+            f.verts = fn
             if face_info[fid]['pos']:
                 f.pos = face_info[fid]['pos'][0]
                 dec = sum(x < f.pos for x in decrease)
@@ -895,7 +935,7 @@ class BuildBlocking(bpy.types.Operator):
 
         bpy.ops.object.mode_set(mode='OBJECT')
 
-        edgeDirections = utils.getEdgeDirections(block_verts, dependent_edges)
+        edgeDirections = utils.getEdgeDirections(block_verts, block_edges)
 
         ob = bpy.context.active_object
         me = ob.data
@@ -911,7 +951,7 @@ class BuildBlocking(bpy.types.Operator):
                     ei.vertices = (e1, e0)
         bpy.ops.object.mode_set(mode='EDIT')
 
-        repair_faces(face_info, faces_as_list_of_nodes)
+        repair_blockfaces(ob)
         bpy.ops.draw.directions('INVOKE_DEFAULT')
         self.report({'INFO'}, "Number of blocks: {}".format(len(block_verts)))
 		# blender_utils.draw_edge_direction()
@@ -956,18 +996,18 @@ def writeMesh(ob, filename = ''):
     edgeInfo = collectEdges(ob,lengths)
     detemp = []
     ngroups = 0
-    for de in ob.dependent_edges:
+    for de in ob.block_edges:
         detemp.append((de.id,de.v1,de.v2))
         ngroups = max(ngroups,int(de.id))
 
-    dependent_edges = [[] for i in range(ngroups+1)]
+    block_edges = [[] for i in range(ngroups+1)]
     for e in detemp:
-        dependent_edges[e[0]].append([e[1],e[2]])
+        block_edges[e[0]].append([e[1],e[2]])
 
     block_faces = []
     for f in ob.block_faces:
         if f.enabled:
-            block_faces.append(list(f.face_verts))
+            block_faces.append(list(f.verts))
 
     selected_edges = [e.select for e in ob.data.edges]
 
@@ -1011,7 +1051,7 @@ def writeMesh(ob, filename = ''):
         mesh = preview.PreviewMesh(filename)
     else:
         mesh = preview.PreviewMesh()
-    cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, dependent_edges, block_faces)
+    cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, block_faces)
     bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
 ###############################################################
     return mesh, cells
@@ -1135,47 +1175,84 @@ class DrawEdgeDirections(bpy.types.Operator):
     def remove(self, context, ob):
         context.scene.objects.unlink(ob)
         bpy.data.objects.remove(ob)
+
+def repair_blockfaces(ob):
+    bm = bmesh.from_edit_mesh(ob.data)
+    bm.verts.ensure_lookup_table()
+    faces_remove = []
+    for f in ob.block_faces:
+        print(ob.blocks[f.neg].enabled,ob.blocks[f.pos].enabled,f.neg,f.pos)
+        f_verts = [bm.verts[vid] for vid in f.verts]
+        bf = bm.faces.get(f_verts)
+        if f.pos != -1 and f.neg != -1:
+            if ob.blocks[f.pos].enabled and ob.blocks[f.neg].enabled:
+                if bf:
+                    faces_remove.append(bf)
+            elif (not ob.blocks[f.pos].enabled and ob.blocks[f.neg].enabled) \
+                    or (ob.blocks[f.pos].enabled and not ob.blocks[f.neg].enabled):
+                if not bf:
+                    bm.faces.new(f_verts)
+                    print('uus feissi')
+        elif (f.pos == -1 and f.neg != -1):
+            if ob.blocks[f.neg].enabled:
+                if not bf:
+                    bm.faces.new(f_verts)
+            else:
+                if bf:
+                    faces_remove.append(bf)
+                    print('pois feissi')
+        elif (f.pos != -1 and f.neg == -1):
+            if ob.blocks[f.pos].enabled:
+                if not bf:
+                    bm.faces.new(f_verts)
+            else:
+                if bf:
+                    faces_remove.append(bf)
+                    print('pois feissi')
+    for f in faces_remove:
+        bm.faces.remove(f)
+
 # Kalle's implementation
-def repair_faces(face_info, faces_as_list_of_nodes):
-    ob = bpy.context.active_object
+# def repair_faces(face_info, faces_as_list_of_nodes):
+    # ob = bpy.context.active_object
 
-    bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,False,True)")
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='DESELECT')
-    bpy.ops.object.mode_set(mode='OBJECT')
-    for f in ob.data.polygons:
-        fid, tmp = utils.findFace(faces_as_list_of_nodes, f.vertices)
-        if fid >= 0: # face was found in list
-            if (len(face_info[fid]['neg']) + len(face_info[fid]['pos'])) > 1: #this is an internal face
-                f.select = True
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.delete(type='ONLY_FACE')
-    bpy.ops.object.mode_set(mode='OBJECT')
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='DESELECT')
-    bpy.ops.object.mode_set(mode='OBJECT')
+    # bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,False,True)")
+    # bpy.ops.object.mode_set(mode='EDIT')
+    # bpy.ops.mesh.select_all(action='DESELECT')
+    # bpy.ops.object.mode_set(mode='OBJECT')
+    # for f in ob.data.polygons:
+        # fid, tmp = utils.findFace(faces_as_list_of_nodes, f.vertices)
+        # if fid >= 0: # face was found in list
+            # if (len(face_info[fid]['neg']) + len(face_info[fid]['pos'])) > 1: #this is an internal face
+                # f.select = True
+    # bpy.ops.object.mode_set(mode='EDIT')
+    # bpy.ops.mesh.delete(type='ONLY_FACE')
+    # bpy.ops.object.mode_set(mode='OBJECT')
+    # bpy.ops.object.mode_set(mode='EDIT')
+    # bpy.ops.mesh.select_all(action='DESELECT')
+    # bpy.ops.object.mode_set(mode='OBJECT')
 
-    bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(True,False,False)")
-    presentFaces = []
+    # bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(True,False,False)")
+    # presentFaces = []
 
-    for f in ob.data.polygons:
-        presentFaces.append(list(f.vertices))
+    # for f in ob.data.polygons:
+        # presentFaces.append(list(f.vertices))
 
-    for faceid, f in enumerate(faces_as_list_of_nodes):
-        if (len(face_info[faceid]['neg']) + len(face_info[faceid]['pos'])) == 1: #this is a boundary face
-            fid, tmp = utils.findFace(presentFaces, f)
-            if fid < 0: # this boundary face does not exist as a blender polygon. lets create one!
-                bpy.ops.object.mode_set(mode='EDIT')
-                bpy.ops.mesh.select_all(action='DESELECT')
-                bpy.ops.object.mode_set(mode='OBJECT')
-                for v in f:
-                    ob.data.vertices[v].select = True
-                bpy.ops.object.mode_set(mode='EDIT')
-                bpy.ops.mesh.edge_face_add()
-                bpy.ops.mesh.tris_convert_to_quads(uvs=False, vcols=False, sharp=False, materials=False)
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_all(action='DESELECT')
-    bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
+    # for faceid, f in enumerate(faces_as_list_of_nodes):
+        # if (len(face_info[faceid]['neg']) + len(face_info[faceid]['pos'])) == 1: #this is a boundary face
+            # fid, tmp = utils.findFace(presentFaces, f)
+            # if fid < 0: # this boundary face does not exist as a blender polygon. lets create one!
+                # bpy.ops.object.mode_set(mode='EDIT')
+                # bpy.ops.mesh.select_all(action='DESELECT')
+                # bpy.ops.object.mode_set(mode='OBJECT')
+                # for v in f:
+                    # ob.data.vertices[v].select = True
+                # bpy.ops.object.mode_set(mode='EDIT')
+                # bpy.ops.mesh.edge_face_add()
+                # bpy.ops.mesh.tris_convert_to_quads(uvs=False, vcols=False, sharp=False, materials=False)
+    # bpy.ops.object.mode_set(mode='EDIT')
+    # bpy.ops.mesh.select_all(action='DESELECT')
+    # bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
 
 
 def get_snap_vertices(bob):
