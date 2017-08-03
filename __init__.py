@@ -103,6 +103,7 @@ def getObjects(self, context):
 
 # SwiftBlock properties
 class BlockProperty(bpy.types.PropertyGroup):
+    id = bpy.props.IntProperty()
     name = bpy.props.StringProperty()
     verts = bpy.props.IntVectorProperty(size = 8)
     enabled = bpy.props.BoolProperty(default=True)
@@ -178,13 +179,13 @@ def initSwiftBlockProperties():
 class block_items(bpy.types.UIList):
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        split = layout.split(0.6)
+        split = layout.split(0.9)
         block = context.active_object.blocks[index]
-        name = block.name
+        name = block.name + ' %d'%index
         c = split.operator("edit.block", name, emboss=False)
         c.blockid = index
-        c.name = name
-        split.label("%d" % (index))
+        c.name = block.name
+        # split.label("%d" % (index))
         # split.prop(item, "name", text="", emboss=False, translate=False)#, icon='BORDER_RECT')
 
         if block.enabled:
@@ -239,11 +240,11 @@ class SwiftBlockPanel(bpy.types.Panel):
             box = self.layout.box()
             box.label("Automatic snapping")
             if ob.Autosnap:
-                split = box.split(percentage=0.1)
+                split = box.split(percentage=0.2)
                 col = split.column()
                 col.prop(ob, "Autosnap")
                 col = split.column()
-                col.prop(ob, "SnapObject")
+                col.prop(ob, "SnapObject",'')
                 if ob.SnapObject != "":
                     box.operator("activate.snapping", text="Activate")
             else:
@@ -282,15 +283,31 @@ class SwiftBlockPanel(bpy.types.Panel):
             # split.operator("edge.mapping", text="Set edge")
             # split = split.split()
             box = self.layout.box()
+            box.label('Boundary conditions')
+            box.prop(ob, 'patchName')
+            box.prop(ob, 'bcTypeEnum')
+            box.operator("set.patchname")
+            for m in ob.data.materials:
+                try:
+                    patchtype = str(' ' + m['patchtype'])
+                    split = box.split(percentage=0.2, align=True)
+                    col = split.column()
+                    col.prop(m, "diffuse_color", text="")
+                    col = split.column()
+                    col.operator("set.getpatch", text=m.name + patchtype, emboss=False).whichPatch = m.name
+                except:
+                    pass
+            box = self.layout.box()
             box.label("Edges")
             if 'Edge_directions' in bpy.data.objects:
                 box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_HLT").show=False
             else:
                 box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_DEHLT").show=True
             box.operator("flip.edge")
-            box.label('Edge groups')
-            box.prop(ob, 'EdgeGroupName')
-            box.operator("set.edgegroup")
+            box.label("Add Edge groups")
+            split = box.split(percentage=0.9)
+            split.prop(ob, 'EdgeGroupName','')
+            split.operator("set.edgegroup",'',icon='PLUS',emboss = False)
             for eg in ob.edge_groups:
                 split = box.split(percentage=0.8, align=True)
                 col = split.column()
@@ -300,6 +317,7 @@ class SwiftBlockPanel(bpy.types.Panel):
             box = self.layout.box()
             box.label("Blocks")
             box.template_list("block_items", "", ob, "blocks", scn, "block_index", rows=2)
+            box.operator("get.block")
             # split = box.split(percentage=0.5, align=True)
             # col = split.column()
             # col.label("Name")
@@ -322,20 +340,6 @@ class SwiftBlockPanel(bpy.types.Panel):
                 # else:
                     # c = col.operator('enable.block', 'disabled').blockid = i
 
-            box = self.layout.box()
-            box.prop(ob, 'patchName')
-            box.prop(ob, 'bcTypeEnum')
-            box.operator("set.patchname")
-            for m in ob.data.materials:
-                try:
-                    patchtype = str(' ' + m['patchtype'])
-                    split = box.split(percentage=0.2, align=True)
-                    col = split.column()
-                    col.prop(m, "diffuse_color", text="")
-                    col = split.column()
-                    col.operator("set.getpatch", text=m.name + patchtype, emboss=False).whichPatch = m.name
-                except:
-                    pass
 
 class EdgeSelectAligned(bpy.types.Operator):
     bl_idname = "select.aligned"
@@ -358,7 +362,7 @@ class EdgeSelectAligned(bpy.types.Operator):
 class FlipEdge(bpy.types.Operator):
     "Flips aligned edges, select only one edge per group"
     bl_idname = "flip.edge"
-    bl_label = "Flips edges"
+    bl_label = "Flip edges"
 
     def execute(self, context):
         ob = context.active_object
@@ -379,6 +383,30 @@ class FlipEdge(bpy.types.Operator):
             e.vertices = (e1,e0)
         bpy.ops.object.mode_set(mode='EDIT')
         bpy.ops.draw.directions('INVOKE_DEFAULT')
+        return {'FINISHED'}
+
+class GetBlock(bpy.types.Operator):
+    "Get block from selection"
+    bl_idname = "get.block"
+    bl_label = "Get block"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def invoke(self, context, event):
+        ob = bpy.context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+        selection = []
+        for v in bm.verts:
+            if v.select:
+                selection.append(v.index)
+        block = False
+        for b in ob.blocks:
+            if all([v in selection for v in b.verts]):
+                block = b
+                break
+        if not block:
+            self.report({'INFO'}, "No block found with selected vertices")
+            return {'CANCELLED'}
+        bpy.ops.edit.block('INVOKE_DEFAULT', blockid=block.id, name = block.name )
         return {'FINISHED'}
 
 class EditBlock(bpy.types.Operator):
@@ -407,6 +435,7 @@ class EditBlock(bpy.types.Operator):
 
 # this could be used to select multiple blocks
     def invoke(self, context, event):
+        context.scene.block_index = self.blockid
         if event.shift:
             self.shiftDown = True
         else:
@@ -428,6 +457,9 @@ class EditBlock(bpy.types.Operator):
         bm.verts.ensure_lookup_table()
         for v in verts:
             bm.verts[v].select = True
+        for e in bm.edges:
+            if e.verts[0].select and e.verts[1].select:
+                e.select = True
         for f in bm.faces:
             if len(f.verts) == 4 and sum([v.select for v in f.verts]) == 4:
                 f.select = True
@@ -445,6 +477,7 @@ class EnableBlock(bpy.types.Operator):
         scn = context.scene
         ob = context.active_object
         block = ob.blocks[self.blockid]
+        context.scene.block_index = self.blockid
 
         if block.enabled:
             block.enabled = False
@@ -776,7 +809,8 @@ class BuildBlocking(bpy.types.Operator):
         ob.blocks.clear()
         for i,bv in enumerate(block_verts):
             b = ob.blocks.add()
-            b.name = 'block_{}'.format(i)
+            b.id = i
+            b.name = 'block'#_{}'.format(i)
             b.verts = bv
 
         # bm = bmesh.new()
@@ -1046,10 +1080,11 @@ class DrawEdgeDirections(bpy.types.Operator):
         bpy.ops.mesh.primitive_cone_add(vertices=self.verts,radius1=0.3,depth=1)#,end_fill_type='NOTHING')
         default_arrow = context.active_object
         arrows = []
+        # this is "a bit" slow
         for e,l in zip(self.edges,self.lengths):
             v1 = Vector(e[0])
             v2 = Vector(e[1])
-            tob = bpy.data.objects.new("Arrow_duplicate", default_arrow.data.copy())
+            tob = bpy.data.objects.new("Arrow_duplicate", default_arrow.data)
             tob.location = v1+0.5*(v2-v1)
             if self.relativeSize:
                 scale = self.size*l
