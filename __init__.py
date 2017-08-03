@@ -399,10 +399,17 @@ class GetBlock(bpy.types.Operator):
             if v.select:
                 selection.append(v.index)
         block = False
+        occs = []
         for b in ob.blocks:
-            if all([v in selection for v in b.verts]):
+            occ = [v in selection for v in b.verts].count(True)
+            if occ == 8:
                 block = b
                 break
+            else:
+                occs.append(occ)
+        if not block:
+            max_occ = max(enumerate(occs), key=lambda x:x[1])[0]
+            block = ob.blocks[max_occ]
         if not block:
             self.report({'INFO'}, "No block found with selected vertices")
             return {'CANCELLED'}
@@ -1071,11 +1078,9 @@ class DrawEdgeDirections(bpy.types.Operator):
             self.remove(context,eob)
         except:
             pass
-        if not self.show:
+        if not self.edges or not self.show:
             self.bob.direction_object = ''
             return {"CANCELLED"}
-
-
         bpy.ops.object.mode_set(mode='OBJECT')
         bpy.ops.mesh.primitive_cone_add(vertices=self.verts,radius1=0.3,depth=1)#,end_fill_type='NOTHING')
         default_arrow = context.active_object
