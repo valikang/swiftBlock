@@ -2,6 +2,13 @@ import bpy
 import numpy as np
 
 def edgeMapping(edge):
+    if edge["type"] == "Geometric MG":
+        return multiGrading(edge)
+    elif edge["type"] == "Geometric":
+        edge["ratio"] == edge["ratio"]
+        return edge
+
+def multiGrading(edge):
     eps = 1e-6
     grading1 = True
     grading2 = True

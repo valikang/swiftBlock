@@ -42,18 +42,24 @@ class InitBlockingObject(bpy.types.Operator):
         print("initialize")
         ob = bpy.context.active_object
         bm = bmesh.from_edit_mesh(ob.data)
+
         bm.edges.layers.string.new("type")
         bm.edges.layers.float.new("x1")
         bm.edges.layers.float.new("x2")
         bm.edges.layers.float.new("r1")
         bm.edges.layers.float.new("r2")
         bm.edges.layers.float.new("dx")
+        bm.edges.layers.float.new("ratio")
         bm.edges.layers.int.new("cells")
         bm.edges.layers.int.new("groupid")
-        bm.edges.layers.string.new("snapId")
         bm.edges.layers.float.new("time")
-        bm.edges.layers.int.new("deactivated")
-        bm.faces.layers.int.new("snapId")
+
+        bm.faces.layers.int.new('pos')
+        bm.faces.layers.int.new('neg')
+        bm.faces.layers.string.new('projectionObject')
+        # bm.faces.layers.int.new('enabled')
+        bm.faces.layers.int.new('isBlockFace')
+
         bpy.ops.object.mode_set(mode='OBJECT')
         bpy.ops.object.mode_set(mode='EDIT')
         ob.isblockingObject = True
@@ -94,7 +100,7 @@ class ActivateBlocking(bpy.types.Operator):
         return {'FINISHED'}
 
 # Get all objects in current context
-def getObjects(self, context):
+def getSnapObjects(self, context):
     obs = []
     for ob in bpy.data.objects:
         if ob.type == "MESH" and not ob.isblockingObject and not ob.ispreviewObject and not ob.isdirectionObject:
@@ -110,42 +116,30 @@ class BlockProperty(bpy.types.PropertyGroup):
     namedRegion = bpy.props.BoolProperty(default=False)
 bpy.utils.register_class(BlockProperty)
 
-# List of block edges (int edgeGroup, int v1, int v2)
-class BlockEdgesProperty(bpy.types.PropertyGroup):
-    id = bpy.props.IntProperty()
-    v1 = bpy.props.IntProperty()
-    v2 = bpy.props.IntProperty()
-    enabled = bpy.props.BoolProperty(default=True)
-# TODO    snapline = bpy.props.IntProperty()
-bpy.utils.register_class(BlockEdgesProperty)
-
-class BlockFacesProperty(bpy.types.PropertyGroup):
-    id = bpy.props.IntProperty()
-    verts = bpy.props.IntVectorProperty(size = 4)
-    pos = bpy.props.IntProperty()
-    neg = bpy.props.IntProperty()
-    enabled = bpy.props.BoolProperty(default=True)
-bpy.utils.register_class(BlockFacesProperty)
-
 class EdgeGroupProperty(bpy.types.PropertyGroup):
     group_name = bpy.props.StringProperty()
     group_edges = bpy.props.StringProperty()
 bpy.utils.register_class(EdgeGroupProperty)
 
 def initSwiftBlockProperties():
+    bpy.types.Object.Mesher = bpy.props.EnumProperty(name="",
+            items = (("blockMeshMG","blockMeshMG","",1),
+                     ("blockMeshBodyFit","blockMeshBodyFit","",2),),update=changeMesher)
     bpy.types.Object.SnapObject = bpy.props.EnumProperty(name="Object", 
-            items=getObjects, description = "The object which has the geometry curves")
+            items=getSnapObjects, description = "The object which has the geometry curves")
     bpy.types.Object.Autosnap = bpy.props.BoolProperty(name="Enable",
             description = "Snap lines automatically from geometry?")
     bpy.types.Object.MappingType = bpy.props.EnumProperty(name="",
-            items = (("Geometric1","Geometric1","",1),
-                     ("Geometric2","Geometric2","",2),))
+            items = (("Geometric MG","Geometric MG","",1),
+                     ("Geometric","Geometric","",2),))
     bpy.types.Object.Dx = bpy.props.FloatProperty(name="dx", default=1, update=setCellSize, min=0)
     bpy.types.Object.Cells = bpy.props.IntProperty(name="Cells", default=10,  min=1)
     bpy.types.Object.x1 = bpy.props.FloatProperty(name="x1", default=0, description="First cell size", min=0)
     bpy.types.Object.x2 = bpy.props.FloatProperty(name="x2", default=0, description="Last cell size",  min=0)
     bpy.types.Object.r1 = bpy.props.FloatProperty(name="r1", default=1.2, description="First boundary layer geometric ratio", min=1.0)
     bpy.types.Object.r2 = bpy.props.FloatProperty(name="r2", default=1.2, description="Last boundary layer geometric ratio", min=1.0)
+    bpy.types.Object.Ratio = bpy.props.FloatProperty(name="Ratio", default=1.0, description="Ratio of first cell to last cell", min=0)
+    bpy.types.Object.SearchLength = bpy.props.FloatProperty(name="Search Length", default=1.0, description="", min=0)
     # bpy.types.Object.ShowEdgeDirections = bpy.props.BoolProperty(name="Show directions", default=True, update = updateDirections, description="Show edge directions?")
     bpy.types.Object.EdgeGroupName = bpy.props.StringProperty(
         name = "Name",default="group name",
@@ -164,14 +158,6 @@ def initSwiftBlockProperties():
 
     bpy.types.Object.blocks = \
         bpy.props.CollectionProperty(type=BlockProperty)
-
-    bpy.types.Object.block_edges = \
-        bpy.props.CollectionProperty(type=BlockEdgesProperty)
-
-
-    bpy.types.Object.block_faces = \
-        bpy.props.CollectionProperty(type=BlockFacesProperty)
-
 
     bpy.types.Object.edge_groups = \
         bpy.props.CollectionProperty(type=EdgeGroupProperty)
@@ -219,16 +205,16 @@ class SwiftBlockPanel(bpy.types.Panel):
         if ob.ispreviewObject:
             box = self.layout.box()
             box.operator("activate.blocking", text="Activate blocking").hide = True
-        # elif scn.blocking_object in bpy.data.objects and ob.name != scn.blocking_object:
         elif ob.blocking_object and ob.name != ob.blocking_object:
             box = self.layout.box()
             box.operator("activate.blocking", text="Activate blocking").hide = False
-        elif not ob.isblockingObject:
+        elif not ob.isblockingObject and ob.type == 'MESH':
             box.operator("init.blocking", text="Initialize blocking")
 
         elif context.active_object and bpy.context.active_object.mode == "EDIT":
 
             box = self.layout.box()
+            box.prop(ob,"Mesher")
             box.operator("build.blocking", text="Build Blocking")
 
             split = box.split()
@@ -250,38 +236,43 @@ class SwiftBlockPanel(bpy.types.Panel):
             else:
                 box.prop(ob, "Autosnap")
 
+            if ob.Mesher == "blockMeshBodyFit":
+                box.operator("project.face", text="Face to surface projection")
+                box.prop(ob, 'SearchLength')
+
             # box.label("Snapping")
             # split = box.split()
             # split.operator("snap.edge", text="Edge to line")
             # split = split.split()
-            # split.operator("snap.face", text="Face to surface")
 
             box = self.layout.box()
-            # split = box.split()
             box.label("Line Mapping")
-            # box.prop(scn, "MappingType")
-            # if scn.MappingType == "Geometric1":
-                # box.prop(scn, "Nodes")
-            # elif scn.MappingType == "Geometric2":
-                # box.prop(scn, "Dx")
+            # box.prop(ob, "MappingType")
             split = box.split()
-            col = split.column()
-            col.prop(ob, "Cells")
-            col.label("Start")
-            col.prop(ob, "x1")
-            col.prop(ob, "r1")
-            col.operator("set.edgemapping")
-            col = split.column()
-            col.label('')
-            # col.prop(ob, "Dx")
-            col.label("End")
-            col.prop(ob, "x2")
-            col.prop(ob, "r2")
-            col.operator("get.edge")
+            split.prop(ob, "Cells")
+            # if ob.MappingType == "Geometric MG":
+            if ob.Mesher == "blockMeshMG":
+                split = box.split()
+                col = split.column()
+                col.label("Start")
+                col.prop(ob, "x1")
+                col.prop(ob, "r1")
+                col = split.column()
+                col.label("End")
+                col.prop(ob, "x2")
+                col.prop(ob, "r2")
+            elif ob.Mesher == "blockMeshBodyFit":
+                split.prop(ob, "Ratio")
+            split = box.split()
+            split.operator("set.edgemapping")
+            split.operator("get.edge")
             box.operator("select.aligned")
+            if 'Edge_directions' in bpy.data.objects:
+                box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_HLT").show=False
+            else:
+                box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_DEHLT").show=True
+
             split = box.split()
-            # split.operator("edge.mapping", text="Set edge")
-            # split = split.split()
             box = self.layout.box()
             box.label('Boundary conditions')
             box.prop(ob, 'patchName')
@@ -299,10 +290,6 @@ class SwiftBlockPanel(bpy.types.Panel):
                     pass
             box = self.layout.box()
             box.label("Edges")
-            if 'Edge_directions' in bpy.data.objects:
-                box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_HLT").show=False
-            else:
-                box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_DEHLT").show=True
             box.operator("flip.edge")
             box.label("Add Edge groups")
             split = box.split(percentage=0.9)
@@ -318,28 +305,13 @@ class SwiftBlockPanel(bpy.types.Panel):
             box.label("Blocks")
             box.template_list("block_items", "", ob, "blocks", scn, "block_index", rows=2)
             box.operator("get.block")
-            # split = box.split(percentage=0.5, align=True)
-            # col = split.column()
-            # col.label("Name")
-            # col = split.column()
-            # col.label("Id")
-            # col = split.column()
 
-            # for i,bv in enumerate(ob.blocks):
-                # split = box.split(percentage=0.5, align=True)
-                # col = split.column()
-                # c = col.operator("edit.block", ob.blocks[i].name, emboss=False)
-                # c.blockid = i
-                # c.name = ob.blocks[i].name
-
-                # col = split.column()
-                # col.label(str(i))
-                # col = split.column()
-                # if bv.enabled:
-                    # c = col.operator('enable.block', 'enabled').blockid = i
-                # else:
-                    # c = col.operator('enable.block', 'disabled').blockid = i
-
+def changeMesher(self, context):
+    ob = context.active_object
+    if ob.Mesher == "blockMeshMG":
+        ob.MappingType = "Geometric MG"
+    elif ob.Mesher == "blockMeshBodyFit":
+        ob.MappingType = "Geometric"
 
 class EdgeSelectAligned(bpy.types.Operator):
     bl_idname = "select.aligned"
@@ -490,7 +462,8 @@ class EnableBlock(bpy.types.Operator):
             block.enabled = False
         else:
             block.enabled = True
-        repair_blockFacesEdges(ob)
+        # repair_blockFacesEdges(ob)
+        hideFacesEdges(ob)
 
         return {'FINISHED'}
 
@@ -644,25 +617,28 @@ class SetEdge(bpy.types.Operator):
 
         bm = bmesh.from_edit_mesh(ob.data)
         typel = bm.edges.layers.string.get('type')
+        cellsl = bm.edges.layers.int.get('cells')
         x1l = bm.edges.layers.float.get('x1')
         x2l = bm.edges.layers.float.get('x2')
         r1l = bm.edges.layers.float.get('r1')
         r2l = bm.edges.layers.float.get('r2')
-        cellsl = bm.edges.layers.int.get('cells')
-
+        rl = bm.edges.layers.float.get('ratio')
         for e in bm.edges:
             if e.select:
-                # if ob.CopyAligned:
-                    # groupid = e[groupl]
-                    # for i in bm.edges:
-                        # if i[groupl] == groupid:
-                            # i.select = True
                 e[typel] = str.encode(ob.MappingType)
-                e[cellsl] = ob.Cells
-                e[x1l] = ob.x1
-                e[x2l] = ob.x2
-                e[r1l] = ob.r1
-                e[r2l] = ob.r2
+                if ob.MappingType == "Geometric MG":
+                    # if ob.CopyAligned:
+                        # groupid = e[groupl]
+                        # for i in bm.edges:
+                            # if i[groupl] == groupid:
+                                # i.select = True
+                    e[cellsl] = ob.Cells
+                    e[x1l] = ob.x1
+                    e[x2l] = ob.x2
+                    e[r1l] = ob.r1
+                    e[r2l] = ob.r2
+                elif ob.MappingType == "Geometric":
+                    e[rl] = ob.Ratio
         return {'FINISHED'}
 
 class SetEdge(bpy.types.Operator):
@@ -775,14 +751,33 @@ class SnapToEdge(bpy.types.Operator):
         context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
-# Explicitly define which surface to snap for a face
-# Not implemented
-class SnapToSurface(bpy.types.Operator):
-    bl_idname = "snap.face"
-    bl_label = "Snap face to surface"
-    bl_options = {"UNDO"}
+class ProjectionToSurface(bpy.types.Operator):
+    bl_idname = "project.face"
+    bl_label = "Project faces to surface"
+    bl_options = {"REGISTER","UNDO"}
 
-    def invoke(self, context, event):
+    enabled = bpy.props.BoolProperty("",default=True)
+    projectionObject = bpy.props.EnumProperty(name="Object",
+            items=getSnapObjects, description = "Object to snap")
+
+    def draw(self, context):
+        box = self.layout.column(align=True)
+        split = box.split(percentage=0.1)
+        split.prop(self, 'enabled')
+        if self.enabled:
+            split.prop(self, 'projectionObject')
+
+    def execute(self, context):
+        ob = context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+        bm.faces.ensure_lookup_table()
+        pol = bm.faces.layers.string.get('projectionObject')
+        for f in bm.faces:
+            if f.select:
+                if self.enabled:
+                    f[pol] = self.projectionObject.encode()
+                else:
+                    f[pol] = b''
         return {"FINISHED"}
 
 # Automatically find blocking for the object and preview it.
@@ -792,7 +787,6 @@ class BuildBlocking(bpy.types.Operator):
     bl_options = {"UNDO"}
 
     def invoke(self, context, event):
-        # get verts and edges
         ob = context.active_object
         mesh = ob.data
         bpy.ops.object.mode_set(mode='OBJECT')
@@ -807,9 +801,7 @@ class BuildBlocking(bpy.types.Operator):
             edges.append([e.vertices[0],e.vertices[1]])
             edgeDict[(e.vertices[0],e.vertices[1])] = e.index
         disabled = []
-        # for b in ob.blocks:
-            # if not b.enabled:
-                # disabled.extend(b.block_verts)
+
         # find blocking
         log, block_verts, block_edges, face_info, all_edges, faces_as_list_of_nodes = blockBuilder.blockFinder(edges,verts,disabled = disabled)
 
@@ -820,29 +812,15 @@ class BuildBlocking(bpy.types.Operator):
             b.name = 'block'#_{}'.format(i)
             b.verts = bv
 
-        # bm = bmesh.new()
         bm = bmesh.from_edit_mesh(ob.data)
-        # bm.from_mesh(ob.data)
         groupl = bm.edges.layers.int.get('groupid')
+        bm.verts.ensure_lookup_table()
 
-        ob.block_edges.clear()
         for i, g in enumerate(block_edges):
             for e in g:
-                bm.edges.ensure_lookup_table()
-                de = ob.block_edges.add()
-                de.id = i
-                de.v1 = e[0]
-                de.v2 = e[1]
-                if (e[0],e[1]) in edgeDict:
-                    be = bm.edges[edgeDict[(e[0],e[1])]]
-                else:
-                    be = bm.edges[edgeDict[(e[1],e[0])]]
-                be[groupl] = i
-        faces = []
-        for f in bm.faces:
-            faces.append([v.index for v in f.verts])
+                bme = bm.edges.get((bm.verts[e[0]],bm.verts[e[1]]))
+                bme[groupl] = i
 
-        
 # A bug in face_info when there are o-grids. The block indices after o-grid block have to be decreased by one.
         replace_ids = dict()
         block_ids = []
@@ -858,24 +836,29 @@ class BuildBlocking(bpy.types.Operator):
                 if i not in block_ids:
                     decrease.append(i)
 
-        ob.block_faces.clear()
-        for fid, fn in enumerate(faces_as_list_of_nodes):
-            f = ob.block_faces.add()
-            f.id = utils.findFace(faces,fn)[0]
-            f.enabled = True
-            f.verts = fn
-            if face_info[fid]['pos']:
-                f.pos = face_info[fid]['pos'][0]
-                dec = sum(x < f.pos for x in decrease)
-                f.pos -= dec
+        negl = bm.faces.layers.int.get('neg')
+        posl = bm.faces.layers.int.get('pos')
+
+        for key, value in face_info.items():
+            # probably a bug, some extra faces which do not belong to any block
+            if not value['neg'] and not value['pos']:
+                continue
+            verts = [bm.verts[v] for v in faces_as_list_of_nodes[key]]
+            f = bm.faces.get(verts)
+            if not f:
+                f = bm.faces.new(verts)
+            if value['pos']:
+                f[posl] = value['pos'][0]
+                dec = sum(x < f[posl] for x in decrease)
+                f[posl] -= dec
             else:
-                f.pos = -1
-            if face_info[fid]['neg']:
-                f.neg = face_info[fid]['neg'][0]
-                dec = sum(x < f.neg for x in decrease)
-                f.neg -= dec
+                f[posl] = -1
+            if value['neg']:
+                f[negl] = value['neg'][0]
+                dec = sum(x < f[negl] for x in decrease)
+                f[negl] -= dec
             else:
-                f.neg = -1
+                f[negl] = -1
 
         bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -895,26 +878,31 @@ class BuildBlocking(bpy.types.Operator):
                     ei.vertices = (e1, e0)
         bpy.ops.object.mode_set(mode='EDIT')
 
-        repair_blockFacesEdges(ob)
+        hideFacesEdges(ob)
         bpy.ops.draw.directions('INVOKE_DEFAULT')
         self.report({'INFO'}, "Number of blocks: {}".format(len(block_verts)))
-		# blender_utils.draw_edge_direction()
+        # blender_utils.draw_edge_direction()
         return {"FINISHED"}
 
 
 # Build the mesh from already existing blocking
 def writeMesh(ob, filename = ''):
+    if not ob.blocks:
+        bpy.ops.build.blocking('INVOKE_DEFAULT')
+
     verts = list(blender_utils.vertices_from_mesh(ob))
     # edges = list(blender_utils.edges_from_mesh(ob))
-    bm = bmesh.from_edit_mesh(ob.data)
-    edges = []
 
-    # do not write polyline for hidden edges
+
+    bm = bmesh.from_edit_mesh(ob.data)
+    # do not write polylines for hidden edges
+    edges = []
     for e in bm.edges:
         if not e.hide:
             edges.append((e.verts[0].index, e.verts[1].index))
 
     bpy.ops.object.mode_set(mode='OBJECT')
+
 
     ob.select = False
     if ob.Autosnap and ob.SnapObject:
@@ -927,8 +915,6 @@ def writeMesh(ob, filename = ''):
     for v in ob.data.vertices:
         verts.append(matrix*v.co)
 
-    if not ob.blocks:
-        bpy.ops.build.blocking('INVOKE_DEFAULT')
     blocks = []
     block_names = []
     for b in ob.blocks:
@@ -940,20 +926,32 @@ def writeMesh(ob, filename = ''):
                 block_names.append('')
 
     edgeInfo = collectEdges(ob,lengths)
+
+    bm = bmesh.from_edit_mesh(ob.data)
     detemp = []
+    groupl = bm.edges.layers.int.get('groupid')
     ngroups = 0
-    for de in ob.block_edges:
-        detemp.append((de.id,de.v1,de.v2))
-        ngroups = max(ngroups,int(de.id))
+    for e in bm.edges:
+        detemp.append((e[groupl],e.verts[0].index,e.verts[1].index))
+        ngroups = max(ngroups,e[groupl])
+    # for de in ob.block_edges:
+        # detemp.append((de.id,de.v1,de.v2))
+        # ngroups = max(ngroups,int(de.id))
 
     block_edges = [[] for i in range(ngroups+1)]
     for e in detemp:
         block_edges[e[0]].append([e[1],e[2]])
 
+    pol = bm.faces.layers.string.get('projectionObject')
+    snap_faces = dict()
     block_faces = []
-    for f in ob.block_faces:
-        if f.enabled:
-            block_faces.append(list(f.verts))
+    for f in bm.faces:
+        po = f[pol].decode()
+        if po and po not in snap_faces:
+            snap_faces[po] = []
+            snap_faces[po].append([v.index for v in f.verts])
+        elif po:
+            snap_faces[po].append([v.index for v in f.verts])
 
     selected_edges = [e.select for e in ob.data.edges]
 
@@ -991,16 +989,34 @@ def writeMesh(ob, filename = ''):
         e.select = sel
 
 ### This is everything that is related to blockMesh so a new multiblock mesher could be introduced easily just by creating new preview file ###
-    from . import preview
-    importlib.reload(preview)
-    if filename:
-        mesh = preview.PreviewMesh(filename)
-    else:
-        mesh = preview.PreviewMesh()
-    cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, block_faces)
-    bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
+    if ob.Mesher == 'blockMeshMG':
+        from . import blockMeshMG
+        importlib.reload(blockMeshMG)
+        if filename:
+            mesh = blockMeshMG.PreviewMesh(filename)
+        else:
+            mesh = blockMeshMG.PreviewMesh()
+        cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, block_faces)
 ###############################################################
+    elif ob.Mesher == 'blockMeshBodyFit':
+        from . import blockMeshBodyFit
+        importlib.reload(blockMeshBodyFit)
+        if filename:
+            mesh = blockMeshBodyFit.PreviewMesh(filename)
+        else:
+            mesh = blockMeshBodyFit.PreviewMesh()
+        writeSnapFaces(snap_faces, mesh.triSurfacePath)
+        cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, block_faces, snap_faces, ob.SearchLength)
+    bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
     return mesh, cells
+
+def writeSnapFaces(snap_faces, path):
+    bob = bpy.context.active_object
+    for o in snap_faces:
+        sob = bpy.data.objects[o]
+        blender_utils.activateObject(sob)
+        bpy.ops.export_mesh.stl('EXEC_DEFAULT',filepath = path + '/{}.stl'.format(o))
+    blender_utils.activateObject(bob,True)
 
 class WriteMesh(bpy.types.Operator):
     bl_idname = "write.mesh"
@@ -1124,45 +1140,44 @@ class DrawEdgeDirections(bpy.types.Operator):
         context.scene.objects.unlink(ob)
         bpy.data.objects.remove(ob)
 
-def repair_blockFacesEdges(ob):
+def hideFacesEdges(ob):
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.mode_set(mode='EDIT')
     bm = bmesh.from_edit_mesh(ob.data)
     bm.verts.ensure_lookup_table()
-    for f in ob.block_faces:
-        f_verts = [bm.verts[vid] for vid in f.verts]
-        bf = bm.faces.get(f_verts)
-        if f.pos != -1 and f.neg != -1:
-            if (not ob.blocks[f.pos].enabled and ob.blocks[f.neg].enabled) \
-                    or (ob.blocks[f.pos].enabled and not ob.blocks[f.neg].enabled):
-                if not bf:
-                    bm.faces.new(f_verts)
-            else:
-                if bf:
-                    bm.faces.remove(bf)
-        elif (f.pos == -1 and f.neg != -1):
-            if ob.blocks[f.neg].enabled:
-                if not bf:
-                    bm.faces.new(f_verts)
-            else:
-                if bf:
-                    bm.faces.remove(bf)
-        elif (f.pos != -1 and f.neg == -1):
-            if ob.blocks[f.pos].enabled:
-                if not bf:
-                    bm.faces.new(f_verts)
-            else:
-                if bf:
-                    bm.faces.remove(bf)
 
-    for e in ob.block_edges:
-        bme = bm.edges.get((bm.verts[e.v1],bm.verts[e.v2]))
-        edge_found = False
-        for b in ob.blocks:
-            if b.enabled and e.v1 in b.verts and e.v2 in b.verts:
-                edge_found = True
-                bme.hide_set(False)
-                continue
-        if not edge_found:
-            bme.hide_set(True)
+    negl = bm.faces.layers.int.get('neg')
+    posl = bm.faces.layers.int.get('pos')
+
+    for f in bm.faces:
+        print(f[negl],f[posl])
+        if f[negl] != -1 and f[posl] != -1: #internal face
+            if (not ob.blocks[f[posl]].enabled and ob.blocks[f[negl]].enabled) \
+                    or (ob.blocks[f[posl]].enabled and not ob.blocks[f[negl]].enabled):
+                f.hide = False
+                print('internal face,show')
+            else:
+                f.hide = True
+                print('internal face,hide')
+        elif (f[posl] == -1 and f[negl] != -1): #boundary face
+            if ob.blocks[f[negl]].enabled:
+                f.hide = False
+            else:
+                f.hide = True
+        elif (f[posl] != -1 and f[negl] == -1): #boundary face
+            if ob.blocks[f[posl]].enabled:
+                f.hide = False
+            else:
+                f.hide = True
+    # for e in bm.edges:
+        # edge_found = False
+        # for b in ob.blocks:
+            # if b.enabled and e.verts[0].index in b.verts and e.verts[1].index in b.verts:
+                # edge_found = True
+                # e.hide_set(False)
+                # continue
+        # if not edge_found:
+            # e.hide_set(True)
     bpy.ops.draw.directions('INVOKE_DEFAULT')
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.ops.object.mode_set(mode='EDIT')
@@ -1207,7 +1222,7 @@ def collectEdges(bob, lengths):
     # snap_vertices = get_snap_vertices(bob)
     bm = bmesh.from_edit_mesh(bob.data)
     layers = bm.edges.layers
-    snapIdl = layers.string.get('snapId')
+    # snapIdl = layers.string.get('snapId')
     block_edges = dict()
 
     def getDefault(e, var, prop):
@@ -1225,12 +1240,13 @@ def collectEdges(bob, lengths):
             L = lengths[1][ind]
         else:
             L = (e.verts[0].co-e.verts[1].co).length
-        be["type"] = e[layers.string.get("type")].decode()
+        be["type"] = bob.MappingType#e[layers.string.get("type")].decode()
         be["x1"] = e[layers.float.get('x1')] #getDefault(e, "x1", bob.x1)
         be["x2"] = e[layers.float.get('x2')] #getDefault(e, "x2", bob.x2)
         be["r1"] = e[layers.float.get('r1')] #getDefault(e, "r1", bob.r1)
         be["r2"] = e[layers.float.get('r2')] #getDefault(e, "r2", bob.r2)
         be["N"] = e[layers.int.get('cells')] #getDefault(e, "nodes", bob.Nodes)
+        be["ratio"] = e[layers.float.get("ratio")]
         be["L"] = L
         if not be["N"]:
             be["N"] = 10
@@ -1238,11 +1254,14 @@ def collectEdges(bob, lengths):
             be["r1"] = 1.
         if not be["r2"]:
             be["r2"] = 1.
+        if not be["ratio"]:
+            be["ratio"] = 1
         be = utils.edgeMapping(be)
         block_edges[(e.verts[1].index,e.verts[0].index)] = be
         be = dict(be)
         be["x1"],be["x2"] = be["x2"],be["x1"]
         be["r1"],be["r2"] = be["r2"],be["r1"]
+        be["ratio"] = 1./be["ratio"]
         be = utils.edgeMapping(be)
 
         block_edges[(e.verts[0].index,e.verts[1].index)] = be
