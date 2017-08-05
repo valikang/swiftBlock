@@ -12,6 +12,7 @@ bl_info = {
 
 import bpy
 import bmesh
+import time
 import importlib
 from . import blockBuilder
 importlib.reload(blockBuilder)
@@ -55,7 +56,7 @@ class InitBlockingObject(bpy.types.Operator):
         bm.edges.layers.int.new("cells")
         bm.edges.layers.int.new("groupid")
         bm.edges.layers.string.new('projectionObject')
-        bm.edges.layers.float.new("time")
+        bm.edges.layers.int.new("time")
 
         bm.faces.layers.int.new('pos')
         bm.faces.layers.int.new('neg')
@@ -626,16 +627,15 @@ class SetEdge(bpy.types.Operator):
         r1l = bm.edges.layers.float.get('r1')
         r2l = bm.edges.layers.float.get('r2')
         rl = bm.edges.layers.float.get('ratio')
+        groupl = bm.edges.layers.int.get('groupid')
+        timel = bm.edges.layers.int.get('time')
+
         for e in bm.edges:
             if e.select:
                 e[typel] = str.encode(ob.MappingType)
+                e[cellsl] = ob.Cells
+                e[timel] = time.time()
                 if ob.MappingType == "Geometric MG":
-                    # if ob.CopyAligned:
-                        # groupid = e[groupl]
-                        # for i in bm.edges:
-                            # if i[groupl] == groupid:
-                                # i.select = True
-                    e[cellsl] = ob.Cells
                     e[x1l] = ob.x1
                     e[x2l] = ob.x2
                     e[r1l] = ob.r1
@@ -644,7 +644,7 @@ class SetEdge(bpy.types.Operator):
                     e[rl] = ob.Ratio
         return {'FINISHED'}
 
-class SetEdge(bpy.types.Operator):
+class GetEdge(bpy.types.Operator):
     bl_idname = "get.edge"
     bl_label = "Get edge"
     bl_options = {"UNDO"}
@@ -1271,12 +1271,24 @@ def collectEdges(bob, lengths):
     # snapIdl = layers.string.get('snapId')
     block_edges = dict()
 
-    def getDefault(e, var, prop):
-        if type(prop) is float:
-            val = e[layers.float.get(var)]
-        elif type(prop) is int:
-            val = e[layers.int.get(var)]
-        return val
+    timel = layers.int.get('time')
+    groupl = layers.int.get('groupid')
+    x1l = layers.float.get('x1')
+    x2l = layers.float.get('x2')
+    r1l = layers.float.get('r1')
+    r2l = layers.float.get('r2')
+    cellsl = layers.int.get('cells')
+    ratiol = layers.float.get("ratio")
+
+    ncells = dict()
+    times = dict()
+    for e in bm.edges:
+        if e[groupl] not in ncells:
+            ncells[e[groupl]] = e[cellsl]
+            times[e[groupl]] = e[timel]
+        elif e[timel] > times[e[groupl]]:
+            ncells[e[groupl]] = e[cellsl]
+            times[e[groupl]] = e[timel]
 
     for e in bm.edges:
         be = dict()
@@ -1286,13 +1298,13 @@ def collectEdges(bob, lengths):
             L = lengths[1][ind]
         else:
             L = (e.verts[0].co-e.verts[1].co).length
-        be["type"] = bob.MappingType#e[layers.string.get("type")].decode()
-        be["x1"] = e[layers.float.get('x1')] #getDefault(e, "x1", bob.x1)
-        be["x2"] = e[layers.float.get('x2')] #getDefault(e, "x2", bob.x2)
-        be["r1"] = e[layers.float.get('r1')] #getDefault(e, "r1", bob.r1)
-        be["r2"] = e[layers.float.get('r2')] #getDefault(e, "r2", bob.r2)
-        be["N"] = e[layers.int.get('cells')] #getDefault(e, "nodes", bob.Nodes)
-        be["ratio"] = e[layers.float.get("ratio")]
+        be["type"] = bob.MappingType
+        be["x1"] = e[x1l] 
+        be["x2"] = e[x2l] 
+        be["r1"] = e[r1l] 
+        be["r2"] = e[r2l] 
+        be["N"] = ncells[e[groupl]]
+        be["ratio"] = e[ratiol]
         be["L"] = L
         if not be["N"]:
             be["N"] = 10
