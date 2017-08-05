@@ -29,33 +29,51 @@ class PreviewMesh():
             self.blockMeshDictPath = self.tempdir+"/system/blockMeshDict"
             os.mkdir(self.tempdir+'/constant')
             os.mkdir(self.tempdir+'/constant/polyMesh')
+            self.geomPath = self.tempdir+'/constant/geometry'
+            os.mkdir(self.geomPath)
             os.mkdir(self.tempdir+'/system')
             os.mkdir(self.tempdir+'/0')
             cd = open(self.tempdir+'/system/controlDict','w')
             cd.write(self.header())
             print('OpenFOAM temp directory: {}'.format(self.tempdir))
 
-    def writeBlockMeshDict(self, verts, convertToMeters, patchnames, polyLines, edgeInfo, blockNames, blocks, dependent_edges, block_faces):
+    def writeBlockMeshDict(self, verts, convertToMeters, patchnames, polyLines, edgeInfo, blockNames, blocks, dependent_edges,\
+            projection_geos, project_verts, project_edges, project_faces):
         patchfaces = []
         for pn in patchnames:
             for vl in pn[2]:
                 patchfaces.append(vl)
         bmFile = open(self.blockMeshDictPath,'w')
         bmFile.write(self.header())
-        bmFile.write("\nconvertToMeters " + str(convertToMeters) + ";\n\nvertices\n(\n")
+        # bmFile.write("\nconvertToMeters " + str(convertToMeters) + ";\n\nvertices\n(\n")
+        bmFile.write('\ngeometry\n{\n')
+        for g in projection_geos:
+            bmFile.write('   {geo}\n   {{\n      type triSurfaceMesh;\n      file "{geo}.stl";\n   }}\n'.format(geo=g))
 
-        for v in verts:
-            bmFile.write('    ({} {} {})\n'.format(*v))
+        bmFile.write("}\nvertices\n(\n")
+        for i,v in enumerate(verts):
+            if i in project_verts:
+                bmFile.write('    project ({} {} {}) ({})\n'.format(*v,project_verts[i]))
+            else:
+                bmFile.write('    ({} {} {})\n'.format(*v))
+
+        bmFile.write(");\nedges\n(\n")
+        for key, value in project_edges.items():
+            for v in value:
+                bmFile.write('    projectCurve {} {} ({})\n'.format(*v, key))
+        for pl in polyLines:
+            bmFile.write(pl)
+
+        bmFile.write(");\nfaces\n(\n")
+        for key, value in project_faces.items():
+            for v in value:
+                bmFile.write('    project ({} {} {} {}) {}\n'.format(*v,key))
+
         bmFile.write(");\nblocks\n(\n")
+
+
         NoCells = 0
-
-        edge = lambda e0,e1: [min(e0,e1), max(e0,e1)]
-
         for bid, (vl, blockName) in enumerate(zip(blocks, blockNames)):
-            # blockName = ''
-            # for name in reversed(vertexNames):
-                # if all( v in name[1] for v in vl ):
-                    # blockName = name[0]
             edges = [(vl[e[0]],vl[e[1]]) for e in [(0,1),(3,2),(7,6),(4,5),(0,3),(1,2),(5,6),(4,7),(0,4),(1,5),(2,6),(3,7)]]
             gradingStr = ""
             for ei in edges:
@@ -77,16 +95,9 @@ class PreviewMesh():
             if not len(pn[2]) == 0:
                 bmFile.write('    {} {}\n    (\n'.format(pn[0],pn[1]))
                 for pl in pn[2]:
-                    # fid, tmp = utils.findFace(block_faces, pl)
-                    # if fid >= 0:
-                        # if (len(face_info[fid]['neg']) + len(face_info[fid]['pos'])) == 1: #avoid printing internal faces and patches in non-identified blocks as patch
-                            # bmFile.write('        ({} {} {} {})\n'.format(*pl))
                     bmFile.write('        ({} {} {} {})\n'.format(*pl))
                 bmFile.write('    )\n')
 
-        bmFile.write(');\n\nedges\n(\n')
-        for pl in polyLines:
-            bmFile.write(pl)
         bmFile.write(');')
         bmFile.close()
         return NoCells

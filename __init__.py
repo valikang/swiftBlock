@@ -43,6 +43,8 @@ class InitBlockingObject(bpy.types.Operator):
         ob = bpy.context.active_object
         bm = bmesh.from_edit_mesh(ob.data)
 
+        bm.verts.layers.string.new('projectionObject')
+
         bm.edges.layers.string.new("type")
         bm.edges.layers.float.new("x1")
         bm.edges.layers.float.new("x2")
@@ -52,6 +54,7 @@ class InitBlockingObject(bpy.types.Operator):
         bm.edges.layers.float.new("ratio")
         bm.edges.layers.int.new("cells")
         bm.edges.layers.int.new("groupid")
+        bm.edges.layers.string.new('projectionObject')
         bm.edges.layers.float.new("time")
 
         bm.faces.layers.int.new('pos')
@@ -236,9 +239,9 @@ class SwiftBlockPanel(bpy.types.Panel):
             else:
                 box.prop(ob, "Autosnap")
 
-            if ob.Mesher == "blockMeshBodyFit":
-                box.operator("project.face", text="Face to surface projection")
-                box.prop(ob, 'SearchLength')
+            # if ob.Mesher == "blockMeshBodyFit":
+            box.operator("surface.projection", text="Project to surface")
+            box.prop(ob, 'SearchLength')
 
             # box.label("Snapping")
             # split = box.split()
@@ -751,36 +754,50 @@ class SnapToEdge(bpy.types.Operator):
         context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
-class ProjectionToSurface(bpy.types.Operator):
-    bl_idname = "project.face"
-    bl_label = "Project faces to surface"
+class ProjectToSurface(bpy.types.Operator):
+    bl_idname = "surface.projection"
+    bl_label = "Project to surface"
     bl_options = {"REGISTER","UNDO"}
 
-    enabled = bpy.props.BoolProperty("",default=True)
+    enabled = bpy.props.BoolProperty("Enabled",default=True)
     projectionObject = bpy.props.EnumProperty(name="Object",
             items=getSnapObjects, description = "Object to snap")
 
     def draw(self, context):
         box = self.layout.column(align=True)
-        split = box.split(percentage=0.1)
-        split.prop(self, 'enabled')
+        # split = box.split(percentage=0.1)
+        box.prop(self, 'enabled')
         if self.enabled:
-            split.prop(self, 'projectionObject')
+            box.prop(self, 'projectionObject')
 
     def execute(self, context):
         ob = context.active_object
         bm = bmesh.from_edit_mesh(ob.data)
         bm.faces.ensure_lookup_table()
-        pol = bm.faces.layers.string.get('projectionObject')
+        vpol = bm.verts.layers.string.get('projectionObject')
+        epol = bm.edges.layers.string.get('projectionObject')
+        fpol = bm.faces.layers.string.get('projectionObject')
+        for v in bm.verts:
+            if v.select:
+                if self.enabled:
+                    v[vpol] = self.projectionObject.encode()
+                else:
+                    v[vpol] = b''
+        for e in bm.edges:
+            if e.select:
+                if self.enabled:
+                    e[epol] = self.projectionObject.encode()
+                else:
+                    e[epol] = b''
         for f in bm.faces:
             if f.select:
                 if self.enabled:
-                    f[pol] = self.projectionObject.encode()
+                    f[fpol] = self.projectionObject.encode()
                 else:
-                    f[pol] = b''
+                    f[fpol] = b''
         return {"FINISHED"}
 
-# Automatically find blocking for the object and preview it.
+# Automatically find blocking for the object and view it.
 class BuildBlocking(bpy.types.Operator):
     bl_idname = "build.blocking"
     bl_label = "Build blocks"
@@ -881,7 +898,6 @@ class BuildBlocking(bpy.types.Operator):
         hideFacesEdges(ob)
         bpy.ops.draw.directions('INVOKE_DEFAULT')
         self.report({'INFO'}, "Number of blocks: {}".format(len(block_verts)))
-        # blender_utils.draw_edge_direction()
         return {"FINISHED"}
 
 
@@ -891,7 +907,6 @@ def writeMesh(ob, filename = ''):
         bpy.ops.build.blocking('INVOKE_DEFAULT')
 
     verts = list(blender_utils.vertices_from_mesh(ob))
-    # edges = list(blender_utils.edges_from_mesh(ob))
 
 
     bm = bmesh.from_edit_mesh(ob.data)
@@ -934,24 +949,44 @@ def writeMesh(ob, filename = ''):
     for e in bm.edges:
         detemp.append((e[groupl],e.verts[0].index,e.verts[1].index))
         ngroups = max(ngroups,e[groupl])
-    # for de in ob.block_edges:
-        # detemp.append((de.id,de.v1,de.v2))
-        # ngroups = max(ngroups,int(de.id))
 
     block_edges = [[] for i in range(ngroups+1)]
     for e in detemp:
         block_edges[e[0]].append([e[1],e[2]])
 
+    pol = bm.verts.layers.string.get('projectionObject')
+    project_verts = dict()
+    for v in bm.verts:
+        if v.hide:
+            continue
+        po = v[pol].decode()
+        if po:
+            project_verts[v.index] = po
+
+    pol = bm.edges.layers.string.get('projectionObject')
+    project_edges = dict()
+    for e in bm.edges:
+        if e.hide:
+            continue
+        po = e[pol].decode()
+        if po and po not in project_edges:
+            project_edges[po] = []
+            project_edges[po].append([v.index for v in e.verts])
+        elif po:
+            project_edges[po].append([v.index for v in e.verts])
+
     pol = bm.faces.layers.string.get('projectionObject')
-    snap_faces = dict()
+    project_faces = dict()
     block_faces = []
     for f in bm.faces:
+        if f.hide:
+            continue
         po = f[pol].decode()
-        if po and po not in snap_faces:
-            snap_faces[po] = []
-            snap_faces[po].append([v.index for v in f.verts])
+        if po and po not in project_faces:
+            project_faces[po] = []
+            project_faces[po].append([v.index for v in f.verts])
         elif po:
-            snap_faces[po].append([v.index for v in f.verts])
+            project_faces[po].append([v.index for v in f.verts])
 
     selected_edges = [e.select for e in ob.data.edges]
 
@@ -996,7 +1031,8 @@ def writeMesh(ob, filename = ''):
             mesh = blockMeshMG.PreviewMesh(filename)
         else:
             mesh = blockMeshMG.PreviewMesh()
-        cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, block_faces)
+        projection_tris = writeProjectionObjects(project_verts,project_edges,project_faces, mesh.geomPath)
+        cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, projection_tris, project_verts, project_edges, project_faces)
 ###############################################################
     elif ob.Mesher == 'blockMeshBodyFit':
         from . import blockMeshBodyFit
@@ -1005,18 +1041,28 @@ def writeMesh(ob, filename = ''):
             mesh = blockMeshBodyFit.PreviewMesh(filename)
         else:
             mesh = blockMeshBodyFit.PreviewMesh()
-        writeSnapFaces(snap_faces, mesh.triSurfacePath)
-        cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, block_faces, snap_faces, ob.SearchLength)
+        writeProjectionObjects([], [], project_faces, mesh.triSurfacePath)
+        cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, block_faces, project_faces, ob.SearchLength)
     bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
     return mesh, cells
 
-def writeSnapFaces(snap_faces, path):
+def writeProjectionObjects(verts, edges, faces, path):
     bob = bpy.context.active_object
-    for o in snap_faces:
+    objects = []
+    for o in verts:
+        objects.append(verts[o])
+    for o in edges:
+        objects.append(o)
+    for o in faces:
+        objects.append(o)
+    objects = set(objects)
+    for o in objects:
+        print(o)
         sob = bpy.data.objects[o]
         blender_utils.activateObject(sob)
         bpy.ops.export_mesh.stl('EXEC_DEFAULT',filepath = path + '/{}.stl'.format(o))
     blender_utils.activateObject(bob,True)
+    return objects
 
 class WriteMesh(bpy.types.Operator):
     bl_idname = "write.mesh"
@@ -1150,38 +1196,38 @@ def hideFacesEdges(ob):
     posl = bm.faces.layers.int.get('pos')
 
     for f in bm.faces:
-        print(f[negl],f[posl])
         if f[negl] != -1 and f[posl] != -1: #internal face
             if (not ob.blocks[f[posl]].enabled and ob.blocks[f[negl]].enabled) \
                     or (ob.blocks[f[posl]].enabled and not ob.blocks[f[negl]].enabled):
-                f.hide = False
-                print('internal face,show')
+                f.hide_set(False)# = False
             else:
+                # f.hide_set(True)# = True
                 f.hide = True
-                print('internal face,hide')
         elif (f[posl] == -1 and f[negl] != -1): #boundary face
             if ob.blocks[f[negl]].enabled:
-                f.hide = False
+                f.hide_set(False)# = False
             else:
-                f.hide = True
+                f.hide_set(True)# = True
         elif (f[posl] != -1 and f[negl] == -1): #boundary face
             if ob.blocks[f[posl]].enabled:
-                f.hide = False
+                f.hide_set(False)
             else:
-                f.hide = True
-    # for e in bm.edges:
-        # edge_found = False
-        # for b in ob.blocks:
-            # if b.enabled and e.verts[0].index in b.verts and e.verts[1].index in b.verts:
-                # edge_found = True
-                # e.hide_set(False)
-                # continue
-        # if not edge_found:
-            # e.hide_set(True)
+                f.hide_set(True)
+
+    for e in bm.edges:
+        edge_found = False
+        for b in ob.blocks:
+            if b.enabled and e.verts[0].index in b.verts and e.verts[1].index in b.verts:
+                edge_found = True
+                e.hide = False
+                continue
+        if not edge_found:
+            e.hide_set(True)
     bpy.ops.draw.directions('INVOKE_DEFAULT')
     bpy.ops.object.mode_set(mode='OBJECT')
     bpy.ops.object.mode_set(mode='EDIT')
 
+# not functional
 def get_snap_vertices(bob):
     gob = bpy.data.objects[bpy.context.scene.SnapObject]
     # vg = gob.vertex_groups.get(str(snapId))
