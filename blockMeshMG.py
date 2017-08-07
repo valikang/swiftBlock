@@ -38,7 +38,7 @@ class PreviewMesh():
             print('OpenFOAM temp directory: {}'.format(self.tempdir))
 
     def writeBlockMeshDict(self, verts, convertToMeters, patchnames, polyLines, edgeInfo, blockNames, blocks, dependent_edges,\
-            projection_geos, project_verts, project_edges, project_faces):
+            projections):
         patchfaces = []
         for pn in patchnames:
             for vl in pn[2]:
@@ -47,27 +47,27 @@ class PreviewMesh():
         bmFile.write(self.header())
         # bmFile.write("\nconvertToMeters " + str(convertToMeters) + ";\n\nvertices\n(\n")
         bmFile.write('\ngeometry\n{\n')
-        for g in projection_geos:
+        for g in projections['geo']:
             bmFile.write('   {geo}\n   {{\n      type triSurfaceMesh;\n      file "{geo}.stl";\n   }}\n'.format(geo=g))
 
         bmFile.write("}\nvertices\n(\n")
         for i,v in enumerate(verts):
-            if i in project_verts:
-                bmFile.write('    project ({} {} {}) ({})\n'.format(*v,project_verts[i]))
+            if i in projections['vert']:
+                bmFile.write('    project ({} {} {}) ({})\n'.format(*v,projections['vert'][i]))
             else:
                 bmFile.write('    ({} {} {})\n'.format(*v))
 
         bmFile.write(");\nedges\n(\n")
-        for key, value in project_edges.items():
-            for v in value:
-                bmFile.write('    projectCurve {} {} ({})\n'.format(*v, key))
+        for key, value in projections['edge'].items():
+            # for v in value:
+            bmFile.write('    projectCurve {} {} ({})\n'.format(*key, value))
         for pl in polyLines:
             bmFile.write(pl)
 
         bmFile.write(");\nfaces\n(\n")
-        for key, value in project_faces.items():
-            for v in value:
-                bmFile.write('    project ({} {} {} {}) {}\n'.format(*v,key))
+        for key, value in projections['face'].items():
+            # for v in value:
+            bmFile.write('    project ({} {} {} {}) {}\n'.format(*key,value))
 
         bmFile.write(");\nblocks\n(\n")
 
@@ -235,7 +235,6 @@ FoamFile
     object      blockMeshDict;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-
 
 deltaT          1;
 

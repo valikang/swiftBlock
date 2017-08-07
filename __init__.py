@@ -127,13 +127,13 @@ class SwiftBlockPanel(bpy.types.Panel):
             box.label("Edge groups")
             split = box.split(percentage=0.9)
             split.prop(ob, 'EdgeGroupName','')
-            split.operator("set.edgegroup",'',icon='PLUS',emboss = False)
+            split.operator("add.edgegroup",'',icon='PLUS',emboss = False)
             for eg in ob.edge_groups:
                 split = box.split(percentage=0.8, align=True)
                 col = split.column()
                 col.operator("get.edgegroup", eg.group_name , emboss=False).egName = eg.group_name
                 col = split.column()
-                col.operator('del.edgegroup', '',emboss=False,icon='X').egName = eg.group_name
+                col.operator('remove.edgegroup', '',emboss=False,icon='X').egName = eg.group_name
 
 
 def initSwiftBlockProperties():
@@ -305,546 +305,7 @@ class InitBlockingObject(bpy.types.Operator):
         ob.show_wire = True
         return {"FINISHED"}
 
-
-class ActivateSnap(bpy.types.Operator):
-    bl_idname = "activate.snapping"
-    bl_label = "Activate snapping object"
-    bl_options = {"UNDO"}
-
-    def invoke(self, context, event):
-        scn = context.scene
-        ob = context.active_object
-        pob = bpy.data.objects[ob.EdgeSnapObject]
-        pob.blocking_object = ob.name
-        blender_utils.activateObject(pob, False)
-        return {'FINISHED'}
-
-
-class ActivateBlocking(bpy.types.Operator):
-    bl_idname = "activate.blocking"
-    bl_label = "Activate blocking"
-    bl_options = {"UNDO"}
-
-    hide = bpy.props.BoolProperty()
-
-    def invoke(self, context, event):
-        scn = context.scene
-        ob = context.active_object
-        bob = bpy.data.objects[ob.blocking_object]
-        blender_utils.activateObject(bob, self.hide)
-        return {'FINISHED'}
-def changeMesher(self, context):
-    ob = context.active_object
-    if ob.Mesher == "blockMeshMG":
-        ob.MappingType = "Geometric MG"
-    elif ob.Mesher == "blockMeshBodyFit":
-        ob.MappingType = "Geometric"
-
-
-class EdgeSelectParallel(bpy.types.Operator):
-    bl_idname = "select.parallel"
-    bl_label = "Select parallel edges"
-
-    def execute(self, context):
-        ob = context.active_object
-        bm = bmesh.from_edit_mesh(ob.data)
-        groupl = bm.edges.layers.int.get('groupid')
-        for e in bm.edges:
-            if e.select:
-                groupid = e[groupl]
-                for i in bm.edges:
-                    if i[groupl] == groupid:
-                        i.select = True
-        ob.data.update()
-        return {'FINISHED'}
-
-class FlipEdges(bpy.types.Operator):
-    "Flips parallel edges, select only one edge per group"
-    bl_idname = "flip.edges"
-    bl_label = "Flip edges"
-
-    def execute(self, context):
-        ob = context.active_object
-        bm = bmesh.from_edit_mesh(ob.data)
-        groupl = bm.edges.layers.int.get('groupid')
-        flip_edges = []
-        for e in bm.edges:
-            if e.select:
-                groupid = e[groupl]
-                for i in bm.edges:
-                    if i[groupl] == groupid:
-                        flip_edges.append(i.index)
-                break
-        bpy.ops.object.mode_set(mode='OBJECT')
-        for fe in flip_edges:
-            e = ob.data.edges[fe]
-            (e0,e1) = e.vertices
-            e.vertices = (e1,e0)
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.draw.directions('INVOKE_DEFAULT')
-        return {'FINISHED'}
-
-class GetBlock(bpy.types.Operator):
-    "Get block from selection"
-    bl_idname = "get.block"
-    bl_label = "Get block"
-    bl_options = {'REGISTER', 'UNDO'}
-    
-    def invoke(self, context, event):
-        ob = bpy.context.active_object
-        bm = bmesh.from_edit_mesh(ob.data)
-        selection = []
-        for v in bm.verts:
-            if v.select:
-                selection.append(v.index)
-        block = False
-        occs = []
-        for b in ob.blocks:
-            occ = [v in selection for v in b.verts].count(True)
-            if occ == 8:
-                block = b
-                break
-            else:
-                occs.append(occ)
-        if not block:
-            max_occ = max(enumerate(occs), key=lambda x:x[1])[0]
-            block = ob.blocks[max_occ]
-        if not block:
-            self.report({'INFO'}, "No block found with selected vertices")
-            return {'CANCELLED'}
-        bpy.ops.edit.block('INVOKE_DEFAULT', blockid=block.id, name = block.name )
-        return {'FINISHED'}
-
-class EditBlock(bpy.types.Operator):
-    bl_idname = "edit.block"
-    bl_label = "Edit block"
-    bl_options = {'REGISTER', 'UNDO'}
-
-
-    blockid = bpy.props.IntProperty(name='id')
-    # enabled = bpy.props.BoolProperty(name='enabled', default = True)
-    namedRegion = bpy.props.BoolProperty(name='Named region', default = False)
-    name = bpy.props.StringProperty(name='name')
-
-    def draw(self, context):
-        ob = context.active_object
-        if not ob.blocks[self.blockid].enabled:
-            return
-        col = self.layout.column(align = True)
-        # col.prop(self, "enabled")
-        # split = col.split(percentage=0.1, align=True)
-        # col = split.column()
-        col.prop(self, "namedRegion")
-        if self.namedRegion:
-            # col = split.column()
-            col.prop(self, "name")
-
-# this could be used to select multiple blocks
-    def invoke(self, context, event):
-        ob = context.active_object
-        ob.block_index = self.blockid
-        if event.shift:
-            self.shiftDown = True
-        else:
-            self.shiftDown = False
-        self.execute(context)
-        return {'FINISHED'}
-
-    def execute(self, context):
-        bpy.ops.mesh.select_all(action="DESELECT")
-        scn = context.scene
-        ob = context.active_object
-        ob.blocks[self.blockid].name = self.name
-        ob.blocks[self.blockid].namedRegion = self.namedRegion
-        ob = context.active_object
-
-        verts = ob.blocks[self.blockid].verts
-
-        bm = bmesh.from_edit_mesh(ob.data)
-        bm.verts.ensure_lookup_table()
-        for v in verts:
-            bm.verts[v].select = True
-        for e in bm.edges:
-            if e.verts[0].select and e.verts[1].select:
-                e.select = True
-        for f in bm.faces:
-            if len(f.verts) == 4 and sum([v.select for v in f.verts]) == 4:
-                f.select = True
-        ob.data.update()
-        return {'FINISHED'}
-
-class EnableBlock(bpy.types.Operator):
-    bl_idname = "enable.block"
-    bl_label = "Enable/disable block"
-
-    blockid = bpy.props.IntProperty()
-
-    def execute(self, context):
-        scn = context.scene
-        ob = context.active_object
-        block = ob.blocks[self.blockid]
-        ob.block_index = self.blockid
-
-        if block.enabled:
-            block.enabled = False
-        else:
-            block.enabled = True
-        # repair_blockFacesEdges(ob)
-        hideFacesEdges(ob)
-
-        return {'FINISHED'}
-
-
-class DelEdgeGroup(bpy.types.Operator):
-    bl_idname = "del.edgegroup"
-    bl_label = "Get edge group"
-
-    egName = bpy.props.StringProperty()
-
-    def execute(self, context):
-        scn = context.scene
-        ob = context.active_object
-        for i,eg in enumerate(ob.edge_groups):
-            if eg.group_name == self.egName:
-                ob.edge_groups.remove(i)
-                return {'FINISHED'}
-        return {'CANCEL'}
-
-class GetEdgeGroup(bpy.types.Operator):
-    bl_idname = "get.edgegroup"
-    bl_label = "Get edge group"
-
-    egName = bpy.props.StringProperty()
-
-    def execute(self, context):
-        scn = context.scene
-        ob = context.active_object
-        bpy.ops.mesh.select_all(action="DESELECT")
-
-        bm = bmesh.from_edit_mesh(ob.data)
-        for eg in ob.edge_groups:
-            if eg.group_name == self.egName:
-                edges = list(map(int,eg.group_edges.split(',')))
-                for e in edges:
-                    bm.edges[e].select = True
-        ob.data.update()
-        return {'FINISHED'}
-
-
-class SetEdgeGroup(bpy.types.Operator):
-    '''Set the given name to the selected edges'''
-    bl_idname = "set.edgegroup"
-    bl_label = "Set edge group"
-
-    def execute(self, context):
-        scn = context.scene
-        ob = context.active_object
-        ob.data.update()
-        edges = []
-        for e in ob.data.edges:
-            if e.select:
-                edges.append(e.index)
-        edgesstr = ','.join(map(str,edges))
-        for e in ob.edge_groups:
-            if e.group_name == ob.EdgeGroupName:
-                e.group_edges = edgesstr
-                return {'FINISHED'}
-        eg = ob.edge_groups.add()
-        eg.group_name = ob.EdgeGroupName
-        eg.group_edges = edgesstr
-        return {'FINISHED'}
-
-def patchColor(patch_no):
-    color = [(0.25,0.25,0.25), (1.0,0.,0.), (0.0,1.,0.),(0.0,0.,1.),(0.707,0.707,0),(0,0.707,0.707),(0.707,0,0.707)]
-    return color[patch_no % len(color)]
-
-class OBJECT_OT_SetPatchName(bpy.types.Operator):
-    '''Set the given name to the selected faces'''
-    bl_idname = "set.patchname"
-    bl_label = "Set name"
-
-    def execute(self, context):
-        scn = context.scene
-        ob = context.active_object
-        bpy.ops.object.mode_set(mode='OBJECT')
-        NoSelected = 0
-        for f in ob.data.polygons:
-            if f.select:
-                NoSelected += 1
-        if NoSelected:
-            namestr = ob.patchName
-            namestr = namestr.strip()
-            namestr = namestr.replace(' ', '_')
-            try:
-                mat = bpy.data.materials[namestr]
-                patchindex = list(ob.data.materials).index(mat)
-                ob.active_material_index = patchindex
-            except: # add a new patchname (as a blender material, as such face props are conserved during mesh mods)
-                mat = bpy.data.materials.new(namestr)
-                mat.diffuse_color = patchColor(len(ob.data.materials))
-                bpy.ops.object.material_slot_add()
-                ob.material_slots[-1].material = mat
-            mat['patchtype'] = ob.bcTypeEnum
-            bpy.ops.object.editmode_toggle()
-            bpy.ops.object.material_slot_assign()
-        else:
-            self.report({'INFO'}, "No faces selected!")
-            return{'CANCELLED'}
-        return {'FINISHED'}
-
-class OBJECT_OT_GetPatch(bpy.types.Operator):
-    '''Click to select faces belonging to this patch'''
-    bl_idname = "set.getpatch"
-    bl_label = "Get patch"
-
-    whichPatch = bpy.props.StringProperty()
-    shiftDown = False
-
-    def invoke(self, context, event):
-        if event.shift:
-            self.shiftDown = True
-        else:
-            self.shiftDown = False
-        self.execute(context)
-        return {'FINISHED'}
-
-    def execute(self, context):
-        scn = context.scene
-        ob = context.active_object
-        bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,False,True)")
-        if not self.shiftDown:
-            bpy.ops.mesh.select_all(action='DESELECT')
-        bpy.ops.object.mode_set(mode='OBJECT')
-        mat = bpy.data.materials[self.whichPatch]
-        patchindex = list(ob.data.materials).index(mat)
-        ob.active_material_index = patchindex
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.object.material_slot_select()
-        ob.bcTypeEnum = mat['patchtype']
-        ob.patchName = self.whichPatch
-        return {'FINISHED'}
-
-
-# Change the layer properties of currently selected edges
-class SetEdge(bpy.types.Operator):
-    "Set mapping for the edge"
-    bl_idname = "set.edgemapping"
-    bl_label = "Set edge"
-    bl_options = {"UNDO"}
-
-    def execute(self, context):
-        ob = context.active_object
-        scn = context.scene
-        if not ob.blocks:
-            bpy.ops.build.blocking('INVOKE_DEFAULT')
-
-        bm = bmesh.from_edit_mesh(ob.data)
-        typel = bm.edges.layers.string.get('type')
-        cellsl = bm.edges.layers.int.get('cells')
-        x1l = bm.edges.layers.float.get('x1')
-        x2l = bm.edges.layers.float.get('x2')
-        r1l = bm.edges.layers.float.get('r1')
-        r2l = bm.edges.layers.float.get('r2')
-        rl = bm.edges.layers.float.get('ratio')
-        groupl = bm.edges.layers.int.get('groupid')
-        timel = bm.edges.layers.int.get('time')
-
-        for e in bm.edges:
-            if e.select:
-                e[typel] = str.encode(ob.MappingType)
-                e[cellsl] = ob.Cells
-                e[timel] = time.time()
-                if ob.MappingType == "Geometric MG":
-                    e[x1l] = ob.x1
-                    e[x2l] = ob.x2
-                    e[r1l] = ob.r1
-                    e[r2l] = ob.r2
-                elif ob.MappingType == "Geometric":
-                    e[rl] = ob.Ratio
-        return {'FINISHED'}
-
-class GetEdge(bpy.types.Operator):
-    bl_idname = "get.edge"
-    bl_label = "Get edge"
-    bl_options = {"UNDO"}
-
-    def execute(self, context):
-        ob = context.active_object
-        scn = context.scene
-        if not ob.blocks:
-            bpy.ops.build.blocking('INVOKE_DEFAULT')
-
-        bm = bmesh.from_edit_mesh(ob.data)
-        typel = bm.edges.layers.string.get('type')
-        x1l = bm.edges.layers.float.get('x1')
-        x2l = bm.edges.layers.float.get('x2')
-        r1l = bm.edges.layers.float.get('r1')
-        r2l = bm.edges.layers.float.get('r2')
-        cellsl = bm.edges.layers.int.get('cells')
-
-        for e in bm.edges:
-            if e.select:
-                # e[typel] = str.encode(ob.MappingType)
-                 ob.Cells = e[cellsl]
-                 ob.x1 = e[x1l]
-                 ob.x2 = e[x2l]
-                 ob.r1 = e[r1l]
-                 ob.r2 = e[r2l]
-        return {'FINISHED'}
-
-def setCellSize(self, context):
-    ob = context.active_object
-    scn = context.scene
-
-    bm = bmesh.from_edit_mesh(ob.data)
-    typel = bm.edges.layers.string.get('type')
-    x1l = bm.edges.layers.float.get('x1')
-    x2l = bm.edges.layers.float.get('x2')
-    r1l = bm.edges.layers.float.get('r1')
-    r2l = bm.edges.layers.float.get('r2')
-    cellsl = bm.edges.layers.int.get('cells')
-
-    for e in bm.edges:
-        if e.select:
-            e[typel] = str.encode(ob.MappingType)
-            L = (e.verts[0].co-e.verts[1].co).length
-            N=utils.getNodes(ob.x1,ob.x2,ob.r1,ob.r2,L,ob.Dx)
-            e[cellsl] = N
-            e[x1l] = ob.x1
-            e[x2l] = ob.x2
-            e[r1l] = ob.r1
-            e[r2l] = ob.r2
-
-class EditProjection(bpy.types.Operator):
-    bl_idname = "edit.projection"
-    bl_label = "Edit projection"
-
-    projection_id = bpy.props.IntProperty()
-    id = bpy.props.IntProperty()
-    type = bpy.props.StringProperty()
-    remove = bpy.props.BoolProperty(default=False)
-
-    def invoke(self, context, event):
-        if not event.shift:
-            bpy.ops.mesh.select_all(action='DESELECT')
-        self.execute(context)
-        return {'FINISHED'}
-
-
-    def execute(self, context):
-        ob = context.active_object
-        bm = bmesh.from_edit_mesh(ob.data)
-
-        ob.projection_index = self.projection_id
-        if self.remove:
-            ob.projections.remove(self.projection_id)
-        if self.type == 'vert':
-            bm.verts.ensure_lookup_table()
-            if self.remove:
-                bm.verts[self.id][bm.verts.layers.string.get('projectionObject')] = b''
-            else:
-                bm.verts[self.id].select = True
-        elif self.type == 'edge':
-            bm.edges.ensure_lookup_table()
-            if self.remove:
-                bm.edges[self.id][bm.edges.layers.string.get('projectionObject')] = b''
-            else:
-                bm.edges[self.id].select = True
-        elif self.type == 'face':
-            bm.faces.ensure_lookup_table()
-            if self.remove:
-                bm.faces[self.id][bm.faces.layers.string.get('projectionObject')] = b''
-            else:
-                bm.faces[self.id].select = True
-        ob.data.update()
-        return {'FINISHED'}
-
-class RemoveProjections(bpy.types.Operator):
-    bl_idname = "remove.projection"
-    bl_label = "Remove projection"
-    bl_options = {"REGISTER","UNDO"}
-
-    def execute(self, context):
-        ob = context.active_object
-        bm = bmesh.from_edit_mesh(ob.data)
-
-        vpol = bm.verts.layers.string.get('projectionObject')
-        epol = bm.edges.layers.string.get('projectionObject')
-        fpol = bm.faces.layers.string.get('projectionObject')
-
-        rm_proj = []
-
-        for v in bm.verts:
-            if v.select:
-                v[vpol] = b''
-                for i,p in enumerate(ob.projections):
-                    if p.type == 'vert' and p.id == v.index:
-                        rm_proj.append(i)
-        for e in bm.edges:
-            if e.select:
-                e[epol] = b''
-                for i,p in enumerate(ob.projections):
-                    if p.type == 'edge' and p.id == e.index:
-                        rm_proj.append(i)
-        for f in bm.faces:
-            if f.select:
-                f[fpol] = b''
-                for i,p in enumerate(ob.projections):
-                    if p.type == 'face' and p.id == f.index:
-                        rm_proj.append(i)
-        for i in reversed(sorted(rm_proj)):
-            ob.projections.remove(i)
-        return {"FINISHED"}
-
-
-class AddProjection(bpy.types.Operator):
-    bl_idname = "add.projection"
-    bl_label = "Project to surface"
-    bl_options = {"REGISTER","UNDO"}
-
-    def execute(self, context):
-        def projectionExists(ob, ptype, index, pob):
-            for p in ob.projections:
-                if p.type == ptype and p.id == index and p.ob == pob:
-                    return True
-            return False
-        ob = context.active_object
-        bm = bmesh.from_edit_mesh(ob.data)
-        pob = ob.ProjectionObject
-
-        vpol = bm.verts.layers.string.get('projectionObject')
-        epol = bm.edges.layers.string.get('projectionObject')
-        fpol = bm.faces.layers.string.get('projectionObject')
-        for v in bm.verts:
-            if v.select:
-                if not projectionExists(ob,'vert',v.index, pob):
-                    v[vpol] += (" " + pob).encode()
-                    p = ob.projections.add()
-                    p.type = 'vert'
-                    p.id = v.index
-                    p.ob = pob
-
-        for e in bm.edges:
-            if e.select:
-                if not projectionExists(ob,'edge',e.index, pob):
-                    e[epol] += (" " + pob).encode()
-                    p = ob.projections.add()
-                    p.type = 'edge'
-                    p.id = e.index
-                    p.ob = pob
-
-        for f in bm.faces:
-            if f.select:
-                if not projectionExists(ob,'face',f.index, pob):
-                    f[fpol] += (" " + pob).encode()
-                    p = ob.projections.add()
-                    p.type = 'face'
-                    p.id = f.index
-                    p.ob = pob
-        return {"FINISHED"}
-
+# Blocking and previewing operators
 # Automatically find blocking for the object and view it.
 class BuildBlocking(bpy.types.Operator):
     bl_idname = "build.blocking"
@@ -1001,9 +462,6 @@ def writeMesh(ob, filename = ''):
     for e in detemp:
         block_edges[e[0]].append([e[1],e[2]])
 
-    # project_verts = dict()
-    # project_edges = dict()
-    # block_faces = []
     bm.verts.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
@@ -1026,44 +484,6 @@ def writeMesh(ob, filename = ''):
         elif p.type == 'face':
             key = tuple(v.index for v in bm.faces[p.id].verts)
             projections[p.type][key] = p.ob
-            # if key in projections[p.type]:
-                # projections[p.type][el] += " {}".format(p.o)
-            # else:
-   
-
-    # pol = bm.verts.layers.string.get('projectionObject')
-    # project_verts = dict()
-    # for v in bm.verts:
-        # if v.hide:
-            # continue
-        # po = v[pol].decode()
-        # if po:
-            # project_verts[v.index] = po
-
-    # pol = bm.edges.layers.string.get('projectionObject')
-    # project_edges = dict()
-    # for e in bm.edges:
-        # if e.hide:
-            # continue
-        # po = e[pol].decode()
-        # if po and po not in project_edges:
-            # project_edges[po] = []
-            # project_edges[po].append([v.index for v in e.verts])
-        # elif po:
-            # project_edges[po].append([v.index for v in e.verts])
-
-    # pol = bm.faces.layers.string.get('projectionObject')
-    # project_faces = dict()
-    # block_faces = []
-    # for f in bm.faces:
-        # if f.hide:
-            # continue
-        # po = f[pol].decode()
-        # if po and po not in project_faces:
-            # project_faces[po] = []
-            # project_faces[po].append([v.index for v in f.verts])
-        # elif po:
-            # project_faces[po].append([v.index for v in f.verts])
 
     selected_edges = [e.select for e in ob.data.edges]
 
@@ -1126,34 +546,20 @@ def writeMesh(ob, filename = ''):
     bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
     return mesh, cells
 
-def writeProjectionObjects(ob, path):
-    objects = []
-    for p in ob.projections:
-        objects.append(p.ob)
-    objects = set(objects)
-    for o in objects:
-        sob = bpy.data.objects[o]
-        blender_utils.activateObject(sob)
-        bpy.ops.export_mesh.stl('EXEC_DEFAULT',filepath = path + '/{}.stl'.format(o))
-    blender_utils.activateObject(ob,True)
-    return objects
+class PreviewMesh(bpy.types.Operator):
+    bl_idname = "preview.mesh"
+    bl_label = "Preview mesh"
+    bl_options = {"UNDO"}
 
-# def writeProjectionObjects(verts, edges, faces, path):
-    # bob = bpy.context.active_object
-    # objects = []
-    # for o in verts:
-        # objects.append(verts[o])
-    # for o in edges:
-        # objects.append(o)
-    # for o in faces:
-        # objects.append(o)
-    # objects = set(objects)
-    # for o in objects:
-        # sob = bpy.data.objects[o.strip()]
-        # blender_utils.activateObject(sob)
-        # bpy.ops.export_mesh.stl('EXEC_DEFAULT',filepath = path + '/{}.stl'.format(o))
-    # blender_utils.activateObject(bob,True)
-    # return objects
+    filename = bpy.props.StringProperty(default='')
+
+    def invoke(self, context, event):
+        ob = context.active_object
+        mesh, cells = writeMesh(ob)
+        points, faces = mesh.runMesh()
+        blender_utils.previewMesh(ob, points, faces)
+        self.report({'INFO'}, "Cells in mesh: " + str(cells))
+        return {"FINISHED"}
 
 class WriteMesh(bpy.types.Operator):
     bl_idname = "write.mesh"
@@ -1185,21 +591,626 @@ class WriteMesh(bpy.types.Operator):
         self.report({'INFO'}, "Cells in mesh: " + str(cells))
         return {"FINISHED"}
 
-class PreviewMesh(bpy.types.Operator):
-    bl_idname = "preview.mesh"
-    bl_label = "Preview mesh"
+
+
+class ActivateBlocking(bpy.types.Operator):
+    bl_idname = "activate.blocking"
+    bl_label = "Activate blocking"
     bl_options = {"UNDO"}
 
-    filename = bpy.props.StringProperty(default='')
+    hide = bpy.props.BoolProperty()
 
     def invoke(self, context, event):
+        scn = context.scene
         ob = context.active_object
-        mesh, cells = writeMesh(ob)
-        points, faces = mesh.runMesh()
-        blender_utils.previewMesh(ob, points, faces)
-        self.report({'INFO'}, "Cells in mesh: " + str(cells))
+        bob = bpy.data.objects[ob.blocking_object]
+        blender_utils.activateObject(bob, self.hide)
+        return {'FINISHED'}
+
+class GetBlock(bpy.types.Operator):
+    "Get block from selection"
+    bl_idname = "get.block"
+    bl_label = "Get block"
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    def invoke(self, context, event):
+        ob = bpy.context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+        selection = []
+        for v in bm.verts:
+            if v.select:
+                selection.append(v.index)
+        block = False
+        occs = []
+        for b in ob.blocks:
+            occ = [v in selection for v in b.verts].count(True)
+            if occ == 8:
+                block = b
+                break
+            else:
+                occs.append(occ)
+        if not block:
+            max_occ = max(enumerate(occs), key=lambda x:x[1])[0]
+            block = ob.blocks[max_occ]
+        if not block:
+            self.report({'INFO'}, "No block found with selected vertices")
+            return {'CANCELLED'}
+        bpy.ops.edit.block('INVOKE_DEFAULT', blockid=block.id, name = block.name )
+        return {'FINISHED'}
+
+class EditBlock(bpy.types.Operator):
+    bl_idname = "edit.block"
+    bl_label = "Edit block"
+    bl_options = {'REGISTER', 'UNDO'}
+
+
+    blockid = bpy.props.IntProperty(name='id')
+    namedRegion = bpy.props.BoolProperty(name='Named region', default = False)
+    name = bpy.props.StringProperty(name='name')
+
+    def draw(self, context):
+        ob = context.active_object
+        if not ob.blocks[self.blockid].enabled:
+            return
+        col = self.layout.column(align = True)
+        # col.prop(self, "enabled")
+        # split = col.split(percentage=0.1, align=True)
+        # col = split.column()
+        col.prop(self, "namedRegion")
+        if self.namedRegion:
+            # col = split.column()
+            col.prop(self, "name")
+
+# this could be used to select multiple blocks
+    def invoke(self, context, event):
+        ob = context.active_object
+        ob.block_index = self.blockid
+        if event.shift:
+            self.shiftDown = True
+        else:
+            self.shiftDown = False
+        self.execute(context)
+        return {'FINISHED'}
+
+    def execute(self, context):
+        bpy.ops.mesh.select_all(action="DESELECT")
+        scn = context.scene
+        ob = context.active_object
+        ob.blocks[self.blockid].name = self.name
+        ob.blocks[self.blockid].namedRegion = self.namedRegion
+        ob = context.active_object
+
+        verts = ob.blocks[self.blockid].verts
+
+        bm = bmesh.from_edit_mesh(ob.data)
+        bm.verts.ensure_lookup_table()
+        for v in verts:
+            bm.verts[v].select = True
+        for e in bm.edges:
+            if e.verts[0].select and e.verts[1].select:
+                e.select = True
+        for f in bm.faces:
+            if len(f.verts) == 4 and sum([v.select for v in f.verts]) == 4:
+                f.select = True
+        ob.data.update()
+        return {'FINISHED'}
+
+class EnableBlock(bpy.types.Operator):
+    bl_idname = "enable.block"
+    bl_label = "Enable/disable block"
+
+    blockid = bpy.props.IntProperty()
+
+    def execute(self, context):
+        scn = context.scene
+        ob = context.active_object
+        block = ob.blocks[self.blockid]
+        ob.block_index = self.blockid
+
+        if block.enabled:
+            block.enabled = False
+        else:
+            block.enabled = True
+        # repair_blockFacesEdges(ob)
+        hideFacesEdges(ob)
+
+        return {'FINISHED'}
+
+# Mapping operators
+
+# Change the layer properties of currently selected edges
+class SetEdge(bpy.types.Operator):
+    "Set mapping for the edge"
+    bl_idname = "set.edgemapping"
+    bl_label = "Set edge"
+    bl_options = {"UNDO"}
+
+    def execute(self, context):
+        ob = context.active_object
+        scn = context.scene
+        if not ob.blocks:
+            bpy.ops.build.blocking('INVOKE_DEFAULT')
+
+        bm = bmesh.from_edit_mesh(ob.data)
+        typel = bm.edges.layers.string.get('type')
+        cellsl = bm.edges.layers.int.get('cells')
+        x1l = bm.edges.layers.float.get('x1')
+        x2l = bm.edges.layers.float.get('x2')
+        r1l = bm.edges.layers.float.get('r1')
+        r2l = bm.edges.layers.float.get('r2')
+        rl = bm.edges.layers.float.get('ratio')
+        groupl = bm.edges.layers.int.get('groupid')
+        timel = bm.edges.layers.int.get('time')
+
+        for e in bm.edges:
+            if e.select:
+                e[typel] = str.encode(ob.MappingType)
+                e[cellsl] = ob.Cells
+                e[timel] = time.time()
+                if ob.MappingType == "Geometric MG":
+                    e[x1l] = ob.x1
+                    e[x2l] = ob.x2
+                    e[r1l] = ob.r1
+                    e[r2l] = ob.r2
+                elif ob.MappingType == "Geometric":
+                    e[rl] = ob.Ratio
+        return {'FINISHED'}
+
+class GetEdge(bpy.types.Operator):
+    bl_idname = "get.edge"
+    bl_label = "Get edge"
+    bl_options = {"UNDO"}
+
+    def execute(self, context):
+        ob = context.active_object
+        scn = context.scene
+        if not ob.blocks:
+            bpy.ops.build.blocking('INVOKE_DEFAULT')
+
+        bm = bmesh.from_edit_mesh(ob.data)
+        typel = bm.edges.layers.string.get('type')
+        x1l = bm.edges.layers.float.get('x1')
+        x2l = bm.edges.layers.float.get('x2')
+        r1l = bm.edges.layers.float.get('r1')
+        r2l = bm.edges.layers.float.get('r2')
+        cellsl = bm.edges.layers.int.get('cells')
+
+        for e in bm.edges:
+            if e.select:
+                # e[typel] = str.encode(ob.MappingType)
+                 ob.Cells = e[cellsl]
+                 ob.x1 = e[x1l]
+                 ob.x2 = e[x2l]
+                 ob.r1 = e[r1l]
+                 ob.r2 = e[r2l]
+        return {'FINISHED'}
+
+def setCellSize(self, context):
+    ob = context.active_object
+    scn = context.scene
+
+    bm = bmesh.from_edit_mesh(ob.data)
+    typel = bm.edges.layers.string.get('type')
+    x1l = bm.edges.layers.float.get('x1')
+    x2l = bm.edges.layers.float.get('x2')
+    r1l = bm.edges.layers.float.get('r1')
+    r2l = bm.edges.layers.float.get('r2')
+    cellsl = bm.edges.layers.int.get('cells')
+
+    for e in bm.edges:
+        if e.select:
+            e[typel] = str.encode(ob.MappingType)
+            L = (e.verts[0].co-e.verts[1].co).length
+            N=utils.getNodes(ob.x1,ob.x2,ob.r1,ob.r2,L,ob.Dx)
+            e[cellsl] = N
+            e[x1l] = ob.x1
+            e[x2l] = ob.x2
+            e[r1l] = ob.r1
+            e[r2l] = ob.r2
+
+class EdgeSelectParallel(bpy.types.Operator):
+    bl_idname = "select.parallel"
+    bl_label = "Select parallel edges"
+
+    def execute(self, context):
+        ob = context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+        groupl = bm.edges.layers.int.get('groupid')
+        for e in bm.edges:
+            if e.select:
+                groupid = e[groupl]
+                for i in bm.edges:
+                    if i[groupl] == groupid:
+                        i.select = True
+        ob.data.update()
+        return {'FINISHED'}
+
+class FlipEdges(bpy.types.Operator):
+    "Flips parallel edges, select only one edge per group"
+    bl_idname = "flip.edges"
+    bl_label = "Flip edges"
+
+    def execute(self, context):
+        ob = context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+        groupl = bm.edges.layers.int.get('groupid')
+        flip_edges = []
+        for e in bm.edges:
+            if e.select:
+                groupid = e[groupl]
+                for i in bm.edges:
+                    if i[groupl] == groupid:
+                        flip_edges.append(i.index)
+                break
+        bpy.ops.object.mode_set(mode='OBJECT')
+        for fe in flip_edges:
+            e = ob.data.edges[fe]
+            (e0,e1) = e.vertices
+            e.vertices = (e1,e0)
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.draw.directions('INVOKE_DEFAULT')
+        return {'FINISHED'}
+
+def collectEdges(bob, lengths):
+    bob.select = True
+    bpy.context.scene.objects.active = bob
+    bpy.ops.object.mode_set(mode='EDIT')
+    # snap_vertices = get_snap_vertices(bob)
+    bm = bmesh.from_edit_mesh(bob.data)
+    layers = bm.edges.layers
+    # snapIdl = layers.string.get('snapId')
+    block_edges = dict()
+
+    timel = layers.int.get('time')
+    groupl = layers.int.get('groupid')
+    x1l = layers.float.get('x1')
+    x2l = layers.float.get('x2')
+    r1l = layers.float.get('r1')
+    r2l = layers.float.get('r2')
+    cellsl = layers.int.get('cells')
+    ratiol = layers.float.get("ratio")
+
+    ncells = dict()
+    times = dict()
+    for e in bm.edges:
+        if e[groupl] not in ncells:
+            ncells[e[groupl]] = e[cellsl]
+            times[e[groupl]] = e[timel]
+        elif e[timel] > times[e[groupl]]:
+            ncells[e[groupl]] = e[cellsl]
+            times[e[groupl]] = e[timel]
+
+    for e in bm.edges:
+        be = dict()
+        ev = list([e.verts[0].index,e.verts[1].index])
+        if ev in lengths[0]:
+            ind = lengths[0].index(ev)
+            L = lengths[1][ind]
+        else:
+            L = (e.verts[0].co-e.verts[1].co).length
+        be["type"] = bob.MappingType
+        be["x1"] = e[x1l] 
+        be["x2"] = e[x2l] 
+        be["r1"] = e[r1l] 
+        be["r2"] = e[r2l] 
+        be["N"] = ncells[e[groupl]]
+        be["ratio"] = e[ratiol]
+        be["L"] = L
+        if not be["N"]:
+            be["N"] = 10
+        if not be["r1"]:
+            be["r1"] = 1.
+        if not be["r2"]:
+            be["r2"] = 1.
+        if not be["ratio"]:
+            be["ratio"] = 1
+        be = utils.edgeMapping(be)
+        block_edges[(e.verts[1].index,e.verts[0].index)] = be
+        be = dict(be)
+        be["x1"],be["x2"] = be["x2"],be["x1"]
+        be["r1"],be["r2"] = be["r2"],be["r1"]
+        be["ratio"] = 1./be["ratio"]
+        be = utils.edgeMapping(be)
+
+        block_edges[(e.verts[0].index,e.verts[1].index)] = be
+    return block_edges
+
+# Projection operators
+
+class EditProjection(bpy.types.Operator):
+    bl_idname = "edit.projection"
+    bl_label = "Edit projection"
+
+    projection_id = bpy.props.IntProperty()
+    id = bpy.props.IntProperty()
+    type = bpy.props.StringProperty()
+    remove = bpy.props.BoolProperty(default=False)
+
+    def invoke(self, context, event):
+        if not event.shift:
+            bpy.ops.mesh.select_all(action='DESELECT')
+        self.execute(context)
+        return {'FINISHED'}
+
+
+    def execute(self, context):
+        ob = context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+
+        ob.projection_index = self.projection_id
+        if self.remove:
+            ob.projections.remove(self.projection_id)
+        if self.type == 'vert':
+            bm.verts.ensure_lookup_table()
+            if self.remove:
+                bm.verts[self.id][bm.verts.layers.string.get('projectionObject')] = b''
+            else:
+                bm.verts[self.id].select = True
+        elif self.type == 'edge':
+            bm.edges.ensure_lookup_table()
+            if self.remove:
+                bm.edges[self.id][bm.edges.layers.string.get('projectionObject')] = b''
+            else:
+                bm.edges[self.id].select = True
+        elif self.type == 'face':
+            bm.faces.ensure_lookup_table()
+            if self.remove:
+                bm.faces[self.id][bm.faces.layers.string.get('projectionObject')] = b''
+            else:
+                bm.faces[self.id].select = True
+        ob.data.update()
+        return {'FINISHED'}
+
+class AddProjection(bpy.types.Operator):
+    bl_idname = "add.projection"
+    bl_label = "Project to surface"
+    bl_options = {"REGISTER","UNDO"}
+
+    pob = bpy.types.Object.ProjectionObject
+
+    verts = bpy.props.BoolProperty(default=True)
+    edges = bpy.props.BoolProperty(default=True)
+    faces = bpy.props.BoolProperty(default=True)
+
+    def invoke(self, context, event):
+        self.added = 1
+        return self.execute(context)
+
+    def execute(self, context):
+        def projectionExists(ob, ptype, index, pob):
+            for p in ob.projections:
+                if p.type == ptype and p.id == index and p.ob == pob:
+                    return True
+            return False
+        def addProjection(ptype, index):
+            for p in ob.projections:
+                if p.type == ptype and p.id == index and p.ob == self.pob:
+                    return
+            newp = ob.projections.add()
+            newp.type = ptype
+            newp.id = index
+            newp.ob = self.pob
+            self.added += 1
+
+        ob = context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+
+        if not self.pob:
+            return {"CANCELLED"}
+
+        np = len(ob.projections)
+        for i in range(self.added):
+            ob.projections.remove(np-i)
+
+        for v in bm.verts:
+            if v.select and self.verts:
+                addProjection('vert', v.index)
+
+        for e in bm.edges:
+            if e.select and self.edges:
+                addProjection('edge', e.index)
+
+        for f in bm.faces:
+            if f.select and self.faces:
+                addProjection('face', f.index)
         return {"FINISHED"}
 
+class RemoveProjections(bpy.types.Operator):
+    bl_idname = "remove.projection"
+    bl_label = "Remove projection"
+    bl_options = {"UNDO"}
+
+    def execute(self, context):
+        ob = context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+
+        remove_projections = []
+
+        for v in bm.verts:
+            if v.select:
+                for i,p in enumerate(ob.projections):
+                    if p.type == 'vert' and p.id == v.index:
+                        remove_projections.append(i)
+        for e in bm.edges:
+            if e.select:
+                for i,p in enumerate(ob.projections):
+                    if p.type == 'edge' and p.id == e.index:
+                        remove_projections.append(i)
+        for f in bm.faces:
+            if f.select:
+                for i,p in enumerate(ob.projections):
+                    if p.type == 'face' and p.id == f.index:
+                        remove_projections.append(i)
+        remove_projections = reversed(sorted(remove_projections))
+        for i in remove_projections:
+            ob.projections.remove(i)
+        return {"FINISHED"}
+
+def writeProjectionObjects(ob, path):
+    objects = []
+    for p in ob.projections:
+        objects.append(p.ob)
+    objects = set(objects)
+    for o in objects:
+        sob = bpy.data.objects[o]
+        blender_utils.activateObject(sob)
+        bpy.ops.export_mesh.stl('EXEC_DEFAULT',filepath = path + '/{}.stl'.format(o))
+    blender_utils.activateObject(ob,True)
+    return objects
+
+class ActivateSnap(bpy.types.Operator):
+    bl_idname = "activate.snapping"
+    bl_label = "Activate snapping object"
+    bl_options = {"UNDO"}
+
+    def invoke(self, context, event):
+        scn = context.scene
+        ob = context.active_object
+        pob = bpy.data.objects[ob.EdgeSnapObject]
+        pob.blocking_object = ob.name
+        blender_utils.activateObject(pob, False)
+        return {'FINISHED'}
+
+# Boundary condition operators
+def patchColor(patch_no):
+    color = [(0.25,0.25,0.25), (1.0,0.,0.), (0.0,1.,0.),(0.0,0.,1.),(0.707,0.707,0),(0,0.707,0.707),(0.707,0,0.707)]
+    return color[patch_no % len(color)]
+
+class OBJECT_OT_SetPatchName(bpy.types.Operator):
+    '''Set the given name to the selected faces'''
+    bl_idname = "set.patchname"
+    bl_label = "Set name"
+
+    def execute(self, context):
+        scn = context.scene
+        ob = context.active_object
+        bpy.ops.object.mode_set(mode='OBJECT')
+        NoSelected = 0
+        for f in ob.data.polygons:
+            if f.select:
+                NoSelected += 1
+        if NoSelected:
+            namestr = ob.patchName
+            namestr = namestr.strip()
+            namestr = namestr.replace(' ', '_')
+            try:
+                mat = bpy.data.materials[namestr]
+                patchindex = list(ob.data.materials).index(mat)
+                ob.active_material_index = patchindex
+            except: # add a new patchname (as a blender material, as such face props are conserved during mesh mods)
+                mat = bpy.data.materials.new(namestr)
+                mat.diffuse_color = patchColor(len(ob.data.materials))
+                bpy.ops.object.material_slot_add()
+                ob.material_slots[-1].material = mat
+            mat['patchtype'] = ob.bcTypeEnum
+            bpy.ops.object.editmode_toggle()
+            bpy.ops.object.material_slot_assign()
+        else:
+            self.report({'INFO'}, "No faces selected!")
+            return{'CANCELLED'}
+        return {'FINISHED'}
+
+class OBJECT_OT_GetPatch(bpy.types.Operator):
+    '''Click to select faces belonging to this patch'''
+    bl_idname = "set.getpatch"
+    bl_label = "Get patch"
+
+    whichPatch = bpy.props.StringProperty()
+    shiftDown = False
+
+    def invoke(self, context, event):
+        if event.shift:
+            self.shiftDown = True
+        else:
+            self.shiftDown = False
+        self.execute(context)
+        return {'FINISHED'}
+
+    def execute(self, context):
+        scn = context.scene
+        ob = context.active_object
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,False,True)")
+        if not self.shiftDown:
+            bpy.ops.mesh.select_all(action='DESELECT')
+        bpy.ops.object.mode_set(mode='OBJECT')
+        mat = bpy.data.materials[self.whichPatch]
+        patchindex = list(ob.data.materials).index(mat)
+        ob.active_material_index = patchindex
+        bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.object.material_slot_select()
+        ob.bcTypeEnum = mat['patchtype']
+        ob.patchName = self.whichPatch
+        return {'FINISHED'}
+
+# Edge group operators
+class RemoveEdgeGroup(bpy.types.Operator):
+    bl_idname = "remove.edgegroup"
+    bl_label = "Remove edge group"
+    egName = bpy.props.StringProperty()
+
+    def execute(self, context):
+        scn = context.scene
+        ob = context.active_object
+        for i,eg in enumerate(ob.edge_groups):
+            if eg.group_name == self.egName:
+                ob.edge_groups.remove(i)
+                return {'FINISHED'}
+        return {'CANCEL'}
+
+class GetEdgeGroup(bpy.types.Operator):
+    bl_idname = "get.edgegroup"
+    bl_label = "Get edge group"
+
+    egName = bpy.props.StringProperty()
+
+    def execute(self, context):
+        scn = context.scene
+        ob = context.active_object
+        bpy.ops.mesh.select_all(action="DESELECT")
+
+        bm = bmesh.from_edit_mesh(ob.data)
+        for eg in ob.edge_groups:
+            if eg.group_name == self.egName:
+                edges = list(map(int,eg.group_edges.split(',')))
+                for e in edges:
+                    bm.edges[e].select = True
+        ob.data.update()
+        return {'FINISHED'}
+
+
+class AddEdgeGroup(bpy.types.Operator):
+    '''Set the given name to the selected edges'''
+    bl_idname = "add.edgegroup"
+    bl_label = "Add edge group"
+
+    def execute(self, context):
+        scn = context.scene
+        ob = context.active_object
+        ob.data.update()
+        edges = []
+        for e in ob.data.edges:
+            if e.select:
+                edges.append(e.index)
+        edgesstr = ','.join(map(str,edges))
+        for e in ob.edge_groups:
+            if e.group_name == ob.EdgeGroupName:
+                e.group_edges = edgesstr
+                return {'FINISHED'}
+        eg = ob.edge_groups.add()
+        eg.group_name = ob.EdgeGroupName
+        eg.group_edges = edgesstr
+        return {'FINISHED'}
+
+# Other stuff
+
+def changeMesher(self, context):
+    ob = context.active_object
+    if ob.Mesher == "blockMeshMG":
+        ob.MappingType = "Geometric MG"
+    elif ob.Mesher == "blockMeshBodyFit":
+        ob.MappingType = "Geometric"
 
 class DrawEdgeDirections(bpy.types.Operator):
     "Draw edge directions"
@@ -1316,79 +1327,6 @@ def hideFacesEdges(ob):
     bpy.ops.draw.directions('INVOKE_DEFAULT')
     ob.data.update()
 
-def collectEdges(bob, lengths):
-    bob.select = True
-    bpy.context.scene.objects.active = bob
-    bpy.ops.object.mode_set(mode='EDIT')
-    # snap_vertices = get_snap_vertices(bob)
-    bm = bmesh.from_edit_mesh(bob.data)
-    layers = bm.edges.layers
-    # snapIdl = layers.string.get('snapId')
-    block_edges = dict()
-
-    timel = layers.int.get('time')
-    groupl = layers.int.get('groupid')
-    x1l = layers.float.get('x1')
-    x2l = layers.float.get('x2')
-    r1l = layers.float.get('r1')
-    r2l = layers.float.get('r2')
-    cellsl = layers.int.get('cells')
-    ratiol = layers.float.get("ratio")
-
-    ncells = dict()
-    times = dict()
-    for e in bm.edges:
-        if e[groupl] not in ncells:
-            ncells[e[groupl]] = e[cellsl]
-            times[e[groupl]] = e[timel]
-        elif e[timel] > times[e[groupl]]:
-            ncells[e[groupl]] = e[cellsl]
-            times[e[groupl]] = e[timel]
-
-    for e in bm.edges:
-        be = dict()
-        ev = list([e.verts[0].index,e.verts[1].index])
-        if ev in lengths[0]:
-            ind = lengths[0].index(ev)
-            L = lengths[1][ind]
-        else:
-            L = (e.verts[0].co-e.verts[1].co).length
-        be["type"] = bob.MappingType
-        be["x1"] = e[x1l] 
-        be["x2"] = e[x2l] 
-        be["r1"] = e[r1l] 
-        be["r2"] = e[r2l] 
-        be["N"] = ncells[e[groupl]]
-        be["ratio"] = e[ratiol]
-        be["L"] = L
-        if not be["N"]:
-            be["N"] = 10
-        if not be["r1"]:
-            be["r1"] = 1.
-        if not be["r2"]:
-            be["r2"] = 1.
-        if not be["ratio"]:
-            be["ratio"] = 1
-        be = utils.edgeMapping(be)
-        block_edges[(e.verts[1].index,e.verts[0].index)] = be
-        be = dict(be)
-        be["x1"],be["x2"] = be["x2"],be["x1"]
-        be["r1"],be["r2"] = be["r2"],be["r1"]
-        be["ratio"] = 1./be["ratio"]
-        be = utils.edgeMapping(be)
-
-        block_edges[(e.verts[0].index,e.verts[1].index)] = be
-
-        # if e[snapIdl]:
-            # verts = snap_vertices[e[snapIdl].decode()]
-            # if (verts[0]-e.verts[0].co).length < (verts[0] - e.verts[1].co).length:
-                # be["verts"] = verts
-            # else:
-                # verts = list(reversed(verts))
-                # be["verts"] = verts
-        # else:
-            # be["verts"] = (e.verts[0].co,e.verts[1].co)
-    return block_edges
 
 
 # Kalle's implementation
