@@ -234,7 +234,7 @@ class projection_items(bpy.types.UIList):
         c = split.operator("activate.object",proj.ob, emboss=False, icon="OBJECT_DATA")
         c.ob = proj.ob
         c = split.operator('remove.projection','', emboss = False, icon='X')
-        c.proj_id = proj.id
+        c.proj_id = index
 
 
 # Get all objects in current context
@@ -541,8 +541,8 @@ def writeMesh(ob, filename = ''):
             mesh = blockMeshBodyFit.PreviewMesh(filename)
         else:
             mesh = blockMeshBodyFit.PreviewMesh()
-        writeProjectionObjects([], [], project_faces, mesh.triSurfacePath)
-        cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, block_faces, project_faces, ob.SearchLength)
+        writeProjectionObjects(ob, mesh.triSurfacePath, onlyFaces = True)
+        cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, projections, ob.SearchLength)
     bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
     return mesh, cells
 
@@ -578,8 +578,6 @@ class WriteMesh(bpy.types.Operator):
             default=True,
             options={'HIDDEN'},
             )
-
-
     def invoke(self, context, event):
         bpy.context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
@@ -590,8 +588,6 @@ class WriteMesh(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='EDIT')
         self.report({'INFO'}, "Cells in mesh: " + str(cells))
         return {"FINISHED"}
-
-
 
 class ActivateBlocking(bpy.types.Operator):
     bl_idname = "activate.blocking"
@@ -1045,10 +1041,13 @@ class RemoveProjections(bpy.types.Operator):
             ob.projections.remove(i)
         return {"FINISHED"}
 
-def writeProjectionObjects(ob, path):
+def writeProjectionObjects(ob, path, onlyFaces = True):
     objects = []
     for p in ob.projections:
-        objects.append(p.ob)
+        if onlyFaces and not p.type == 'face':
+            continue
+        else:
+            objects.append(p.ob)
     objects = set(objects)
     for o in objects:
         sob = bpy.data.objects[o]
