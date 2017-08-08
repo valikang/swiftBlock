@@ -61,8 +61,9 @@ def activateObject(ob, hideCurrent = False):
     context = bpy.context
     bpy.ops.object.mode_set(mode='OBJECT')
     cob = context.active_object
-    cob.hide = hideCurrent
-    cob.select = False
+    if cob:
+        cob.hide = hideCurrent
+        cob.select = False
     scn = context.scene
     ob.select = True
     ob.hide = False

@@ -467,7 +467,7 @@ def writeMesh(ob, filename = ''):
     bm.edges.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
 
-    projections = {'vert':dict(),'edge':dict(),'face':dict()}
+    projections = {'vert':dict(),'edge':dict(),'face':dict(), 'geo':dict()}
     for p in ob.projections:
         if p.type == 'vert' and not bm.verts[p.id].hide:
             key = bm.verts[p.id].index
@@ -529,8 +529,10 @@ def writeMesh(ob, filename = ''):
         else:
             mesh = blockMeshMG.PreviewMesh()
         # projection_tris = writeProjectionObjects(project_verts,project_edges,project_faces, mesh.geomPath)
-        geos = writeProjectionObjects(ob, mesh.geomPath)
-        projections['geo'] = geos
+        if ob.projections:
+            geos = writeProjectionObjects(ob, mesh.geomPath)
+            projections['geo'] = geos
+
         cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, projections)
         # cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, projection_geos, project_verts, project_edges, project_faces)
 ###############################################################
@@ -953,6 +955,8 @@ class AddProjections(bpy.types.Operator):
     faces = bpy.props.BoolProperty(default=True)
 
     def invoke(self, context, event):
+        ob = context.active_object
+        self.pob = ob.ProjectionObject
         self.added = 1
         return self.execute(context)
 
@@ -1004,7 +1008,6 @@ class RemoveProjection(bpy.types.Operator):
 
     def execute(self, context):
         ob = context.active_object
-        print('removed',self.proj_id)
         if self.proj_id != -1:
             ob.projections.remove(self.proj_id)
         return {"FINISHED"}
@@ -1051,9 +1054,11 @@ def writeProjectionObjects(ob, path, onlyFaces = True):
     objects = set(objects)
     for o in objects:
         sob = bpy.data.objects[o]
+        hide = sob.hide
         blender_utils.activateObject(sob)
         bpy.ops.export_mesh.stl('EXEC_DEFAULT',filepath = path + '/{}.stl'.format(o))
-    blender_utils.activateObject(ob,True)
+        sob.hide = hide
+    blender_utils.activateObject(ob)
     return objects
 
 class ActivateSnap(bpy.types.Operator):
