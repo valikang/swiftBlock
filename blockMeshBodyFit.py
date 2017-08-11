@@ -7,15 +7,24 @@ import itertools
 import glob
 from . import utils
 class PreviewMesh():
-    def __init__(self, blockMeshDictPath=None):
+    def __init__(self, folder=None):
         if shutil.which('blockMeshBodyFit'):
             self.blockMeshbin = 'blockMeshBodyFit'
         elif shutil.which('blockMeshBoyFit'):
             self.blockMeshbin = 'blockMeshBoyFit'
         else:
             raise RuntimeError('ERROR: No BlockMeshBodyFit Found!')
-        if blockMeshDictPath:
-            self.blockMeshDictPath = blockMeshDictPath
+        if folder:
+            if not os.path.isdir(folder):
+                os.mkdir(folder)
+            if not os.path.isdir(folder+'/constant'):
+                os.mkdir(folder+'/constant')
+            if not os.path.isdir(folder+'/constant/triSurface'):
+                os.mkdir(folder+'/constant/triSurface')
+            if not os.path.isdir(folder+'/system'):
+                os.mkdir(folder+'/system')
+            self.blockMeshDictPath = folder+ '/system/blockMeshDict'
+            self.triSurfacePath = folder+'/constant/triSurface'
         else:
             self.tempdir = tempfile.mkdtemp()
             self.blockMeshDictPath = self.tempdir+"/constant/polyMesh/blockMeshDict"
@@ -29,7 +38,7 @@ class PreviewMesh():
             cd.write(self.header())
             print('OpenFOAM temp directory: {}'.format(self.tempdir))
 
-    def writeBlockMeshDict(self, verts, convertToMeters, patchnames, polyLines, edgeInfo, blockNames, blocks, dependent_edges, block_faces, snap_faces, searchLength):
+    def writeBlockMeshDict(self, verts, convertToMeters, patchnames, polyLines, edgeInfo, blockNames, blocks, dependent_edges, projections, searchLength):
         patchfaces = []
         for pn in patchnames:
             for vl in pn[2]:
@@ -60,9 +69,14 @@ class PreviewMesh():
             bmFile.write('// block id {} \nhex ({} {} {} {} {} {} {} {}) '.format(bid,*vl) \
                        + blockName + ' ({} {} {}) '.format(ires,jres,kres)\
                        + 'edgeGrading (' + gradingStr + ')\n' )
-
+        
+        snapFaces = dict()
+        for key,value in projections['face2surf'].items():
+            if value not in snapFaces:
+                snapFaces[value] = []
+            snapFaces[value].append(key)
         bmFile.write(');\n\nsnapFaces\n{\n')
-        for key, value in snap_faces.items():
+        for key, value in snapFaces.items():
             bmFile.write('   %s.stl\n   {\n   faces\n      (\n'%key)
             for v in value:
                 bmFile.write('      ({} {} {} {})\n'.format(*v))

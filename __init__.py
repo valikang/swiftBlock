@@ -21,7 +21,7 @@ importlib.reload(blender_utils)
 from . import utils
 importlib.reload(utils)
 from mathutils import Vector
-
+from bpy_extras.io_utils import ExportHelper
 
 
 # Create the swiftBlock panel
@@ -61,7 +61,7 @@ class SwiftBlockPanel(bpy.types.Panel):
             box.operator("get.block")
 
             box = self.layout.box()
-            box.label("Line Mapping")
+            box.label("Edge mapping")
             # box.prop(ob, "MappingType")
             split = box.split()
             split.prop(ob, "Cells")
@@ -89,6 +89,7 @@ class SwiftBlockPanel(bpy.types.Panel):
                 box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_DEHLT").show=True
 
             box = self.layout.box()
+            
             box.label("Projections")
             split = box.split()
             split.prop(ob, "ProjectionObject","",icon = "OUTLINER_OB_SURFACE")
@@ -110,6 +111,7 @@ class SwiftBlockPanel(bpy.types.Panel):
             box.prop(ob,"ShowInternalFaces")
 
             box = self.layout.box()
+
             box.label('Boundary conditions')
             row = self.layout.row()
             row.template_list("boundary_items", "", ob, "boundaries", ob, "boundary_index", rows=2)
@@ -134,16 +136,16 @@ class SwiftBlockPanel(bpy.types.Panel):
                     pass
             box = self.layout.box()
 
-            box.label("Edge groups")
-            split = box.split(percentage=0.9)
-            split.prop(ob, 'EdgeGroupName','')
-            split.operator("add.edgegroup",'',icon='PLUS',emboss = False)
-            for eg in ob.edge_groups:
-                split = box.split(percentage=0.8, align=True)
-                col = split.column()
-                col.operator("get.edgegroup", eg.group_name , emboss=False).egName = eg.group_name
-                col = split.column()
-                col.operator('remove.edgegroup', '',emboss=False,icon='X').egName = eg.group_name
+            # box.label("Edge groups")
+            # split = box.split(percentage=0.9)
+            # split.prop(ob, 'EdgeGroupName','')
+            # split.operator("add.edgegroup",'',icon='PLUS',emboss = False)
+            # for eg in ob.edge_groups:
+                # split = box.split(percentage=0.8, align=True)
+                # col = split.column()
+                # col.operator("get.edgegroup", eg.group_name , emboss=False).egName = eg.group_name
+                # col = split.column()
+                # col.operator('remove.edgegroup', '',emboss=False,icon='X').egName = eg.group_name
 
 
 def initSwiftBlockProperties():
@@ -225,7 +227,7 @@ class block_items(bpy.types.UIList):
         split = layout.split(0.9)
         block = context.active_object.blocks[index]
         name = block.name + ' %d'%index
-        c = split.operator("edit.block", name, emboss=False)
+        c = split.operator("edit.block", name, emboss=False, icon="UV_FACESEL")
         c.blockid = index
         c.name = block.name
 
@@ -308,11 +310,11 @@ class projection_items(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         split = layout.split(0.4)
         proj = context.active_object.projections[index]
-        if proj.type == 'vert':
+        if proj.type == 'vert2surf':
             icon = "VERTEXSEL"
-        elif proj.type == 'edge':
+        elif proj.type == 'edge2surf':
             icon = "EDGESEL"
-        elif proj.type == 'face':
+        elif proj.type == 'face2surf':
             icon = "FACESEL"
         c = split.operator("get.projection", '{}{}'.format(proj.type[0],proj.id), emboss=False, icon=icon)
         c.type = proj.type
@@ -331,7 +333,6 @@ def getProjectionObjects(self, context):
             obs.append((ob.name, ob.name, ''))
     return obs
 
-
 # SwiftBlock properties
 class BlockProperty(bpy.types.PropertyGroup):
     id = bpy.props.IntProperty()
@@ -342,7 +343,7 @@ class BlockProperty(bpy.types.PropertyGroup):
 bpy.utils.register_class(BlockProperty)
 
 class ProjectionProperty(bpy.types.PropertyGroup):
-    type = bpy.props.StringProperty() #vert,edge,face
+    type = bpy.props.StringProperty() #vert2surf,edge2surf,face2sur,edge2polyline
     id = bpy.props.IntProperty() #bmesh id
     ob = bpy.props.StringProperty()
 bpy.utils.register_class(ProjectionProperty)
@@ -408,11 +409,8 @@ class InitBlockingObject(bpy.types.Operator):
         ob.projections.clear()
         ob.edge_groups.clear()
 
-        ob.data.update()
         ob.isblockingObject = True
-        # bpy.ops.mesh.select_all(action="SELECT")
-        # bpy.ops.set.patchname('INVOKE_DEFAULT')
-        # bpy.ops.mesh.select_all(action="DESELECT")
+        ob.data.update()
         ob.show_all_edges = True
         ob.show_wire = True
         return {"FINISHED"}
@@ -427,6 +425,7 @@ class BuildBlocking(bpy.types.Operator):
     def invoke(self, context, event):
         ob = context.active_object
         mesh = ob.data
+        mesh.update()
 
         verts = []
         edges = []
@@ -441,6 +440,7 @@ class BuildBlocking(bpy.types.Operator):
 
         # find blocking
         log, block_verts, block_edges, face_info, all_edges, faces_as_list_of_nodes = blockBuilder.blockFinder(edges,verts,disabled = disabled)
+
 
         ob.blocks.clear()
         for i,bv in enumerate(block_verts):
@@ -477,6 +477,8 @@ class BuildBlocking(bpy.types.Operator):
         posl = bm.faces.layers.int.get('pos')
         enabledl = bm.faces.layers.int.get('enabled')
 
+        block_faces = []
+
         for key, value in face_info.items():
             # probably a bug, some extra faces which do not belong to any block
             if not value['neg'] and not value['pos']:
@@ -486,6 +488,7 @@ class BuildBlocking(bpy.types.Operator):
             if not f:
                 f = bm.faces.new(verts)
             f[enabledl] = True
+            block_faces.append(f)
             if value['pos']:
                 f[posl] = value['pos'][0]
                 dec = sum(x < f[posl] for x in decrease)
@@ -498,6 +501,11 @@ class BuildBlocking(bpy.types.Operator):
                 f[negl] -= dec
             else:
                 f[negl] = -1
+
+        for f in bm.faces:
+            if not f in block_faces:
+                bm.faces.remove(f)
+
 
         bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -524,7 +532,7 @@ class BuildBlocking(bpy.types.Operator):
 
 
 # Build the mesh from already existing blocking
-def writeMesh(ob, filename = ''):
+def writeMesh(ob, folder = ''):
     if not ob.blocks:
         bpy.ops.build.blocking('INVOKE_DEFAULT')
 
@@ -581,27 +589,21 @@ def writeMesh(ob, filename = ''):
     bm.edges.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
 
-    projections = {'vert':dict(),'edge':dict(),'face':dict(), 'geo':dict()}
+    projections = {'vert2surf':dict(),'edge2surf':dict(),'face2surf':dict(), 'geo':dict()}
     for p in ob.projections:
-        if p.type == 'vert':
-            for f in bm.verts[p.id].link_faces:
-                if f[enabledl]:
-                    key = bm.verts[p.id].index
-                    if key in projections[p.type]:
-                        projections[p.type][key] += " {}".format(p.ob)
-                    else:
-                        projections[p.type][key] = p.ob
-                    continue
-        elif p.type == 'edge' and not bm.edges[p.id].hide:
-            for f in bm.edges[p.id].link_faces:
-                if f[enabledl]:
-                    key = tuple(v.index for v in bm.edges[p.id].verts)
-                    if key in projections[p.type]:
-                        projections[p.type][key] += " {}".format(p.ob)
-                    else:
-                        projections[p.type][key] = p.ob
-                    continue
-        elif p.type == 'face' and bm.faces[p.id][enabledl]:
+        if p.type == 'vert2surf' and not bm.verts[p.id].hide:
+            key = bm.verts[p.id].index
+            if key in projections[p.type]:
+                projections[p.type][key] += " {}".format(p.ob)
+            else:
+                projections[p.type][key] = p.ob
+        elif p.type == 'edge2surf' and not bm.edges[p.id].hide:
+            key = tuple(v.index for v in bm.edges[p.id].verts)
+            if key in projections[p.type]:
+                projections[p.type][key] += " {}".format(p.ob)
+            else:
+                projections[p.type][key] = p.ob
+        elif p.type == 'face2surf' and not bm.faces[p.id].hide:
             key = tuple(v.index for v in bm.faces[p.id].verts)
             projections[p.type][key] = p.ob
 
@@ -644,8 +646,8 @@ def writeMesh(ob, filename = ''):
     if ob.Mesher == 'blockMeshMG':
         from . import blockMeshMG
         importlib.reload(blockMeshMG)
-        if filename:
-            mesh = blockMeshMG.PreviewMesh(filename)
+        if folder:
+            mesh = blockMeshMG.PreviewMesh(folder)
         else:
             mesh = blockMeshMG.PreviewMesh()
         # projection_tris = writeProjectionObjects(project_verts,project_edges,project_faces, mesh.geomPath)
@@ -659,8 +661,8 @@ def writeMesh(ob, filename = ''):
     elif ob.Mesher == 'blockMeshBodyFit':
         from . import blockMeshBodyFit
         importlib.reload(blockMeshBodyFit)
-        if filename:
-            mesh = blockMeshBodyFit.PreviewMesh(filename)
+        if folder:
+            mesh = blockMeshBodyFit.PreviewMesh(folder)
         else:
             mesh = blockMeshBodyFit.PreviewMesh()
         writeProjectionObjects(ob, mesh.triSurfacePath, onlyFaces = True)
@@ -687,19 +689,24 @@ class WriteMesh(bpy.types.Operator):
     bl_idname = "write.mesh"
     bl_label = "Write Mesh"
 
-    filepath = bpy.props.StringProperty(
-            name="File Path",
-            description="Filepath used for exporting the file",
-            maxlen=1024,
-            subtype='FILE_PATH',
-            default='/opt',
-            )
+    filepath = bpy.props.StringProperty(subtype='DIR_PATH')
+    # filepath = bpy.props.StringProperty(
+            # name="File Path",
+            # description="Filepath used for exporting the file",
+            # maxlen=1024,
+            # subtype='FILE_PATH',
+            # default='/opt',
+            # )
     check_existing = bpy.props.BoolProperty(
             name="Check Existing",
             description="Check and warn on overwriting existing files",
             default=True,
             options={'HIDDEN'},
             )
+
+    # filename_ext = "."
+    use_filter_folder = True
+
     def invoke(self, context, event):
         bpy.context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
@@ -1108,15 +1115,15 @@ class AddProjections(bpy.types.Operator):
 
         for v in bm.verts:
             if v.select and self.verts:
-                addProjection('vert', v.index)
+                addProjection('vert2surf', v.index)
 
         for e in bm.edges:
             if e.select and self.edges:
-                addProjection('edge', e.index)
+                addProjection('edge2surf', e.index)
 
         for f in bm.faces:
             if f.select and self.faces:
-                addProjection('face', f.index)
+                addProjection('face2surf', f.index)
         return {"FINISHED"}
 
 class RemoveProjection(bpy.types.Operator):
@@ -1147,17 +1154,17 @@ class RemoveProjections(bpy.types.Operator):
         for v in bm.verts:
             if v.select:
                 for i,p in enumerate(ob.projections):
-                    if p.type == 'vert' and p.id == v.index:
+                    if p.type == 'vert2surf' and p.id == v.index:
                         remove_projections.append(i)
         for e in bm.edges:
             if e.select:
                 for i,p in enumerate(ob.projections):
-                    if p.type == 'edge' and p.id == e.index:
+                    if p.type == 'edge2surf' and p.id == e.index:
                         remove_projections.append(i)
         for f in bm.faces:
             if f.select:
                 for i,p in enumerate(ob.projections):
-                    if p.type == 'face' and p.id == f.index:
+                    if p.type == 'face2surf' and p.id == f.index:
                         remove_projections.append(i)
         remove_projections = reversed(sorted(remove_projections))
         for i in remove_projections:
@@ -1167,7 +1174,7 @@ class RemoveProjections(bpy.types.Operator):
 def writeProjectionObjects(ob, path, onlyFaces = True):
     objects = []
     for p in ob.projections:
-        if onlyFaces and not p.type == 'face':
+        if onlyFaces and not p.type == 'face2surf':
             continue
         else:
             objects.append(p.ob)
@@ -1197,6 +1204,44 @@ class ActivateSnap(bpy.types.Operator):
         blender_utils.activateObject(pob, False)
         return {'FINISHED'}
 
+class EdgetoPolyLine(bpy.types.Operator):
+    bl_idname = "edge.topolyline"
+    bl_label = "Project edge to polyline"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def invoke(self, context, event):
+        scn = context.scene
+        self.ob = context.active_object
+        bm = bmesh.from_edit_mesh(self.ob.data)
+
+        for e in bm.edges:
+            if e.select:
+                self.edge = e.index
+
+        self.proj_ob = bpy.data.objects[self.ob.ProjectionObject]
+        blender_utils.activateObject(self.proj_ob)
+        context.window_manager.modal_handler_add(self)
+
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type in {'RIGHTMOUSE', 'RETURN'}:
+            bm = bmesh.from_edit_mesh(self.proj_ob.data)
+            selected_edges = []
+            projl = bm.edges.layers.string.get("projectionEdgeId")
+            if not projl:
+                projl = bm.edges.layers.int.new("projectionEdgeId")
+                self.proj_ob.data.update()
+            for e in bm.edges:
+                if e.select:
+                    e[projl] = self.edge
+            blender_utils.activateObject(self.ob)
+            return {'FINISHED'}
+        elif event.type in 'ESC':
+            return {'CANCELLED'}
+        else:
+            return {'PASS_THROUGH'}
+        
 # Boundary condition operators
 def selectActiveBoundary(self, context):
     ob = context.active_object

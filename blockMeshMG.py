@@ -7,23 +7,22 @@ import itertools
 import glob
 from . import utils
 class PreviewMesh():
-    def __init__(self, blockMeshDictPath=None):
+    def __init__(self, folder=None):
         if not shutil.which('blockMesh'):
             raise RuntimeError('ERROR: No BlockMesh Found!')
-            # openfoams = glob.glob('/opt/openfoam*')
-            # for of in openfoams:
-                # try:
-                    # ofdir = glob.glob(of+'/platforms/*')[0]
-                    # self.blockMeshbin = ofdir + '/bin/blockMesh'
-                    # os.environ["LD_LIBRARY_PATH"] = ofdir+'/lib/:'
-                    # os.environ["LD_LIBRARY_PATH"] += ofdir+'/lib/openmpi-system/:'
-                    # os.environ["LD_LIBRARY_PATH"] += ofdir+'/lib/dymmy/:'
-                    # print (os.environ["LD_LIBRARY_PATH"])
-                # except e:
         else:
             self.blockMeshbin = 'blockMesh'
-        if blockMeshDictPath:
-            self.blockMeshDictPath = blockMeshDictPath
+        if folder:
+            if not os.path.isdir(folder):
+                os.mkdir(folder)
+            if not os.path.isdir(folder+'/constant'):
+                os.mkdir(folder+'/constant')
+            if not os.path.isdir(folder+'/constant/geometry'):
+                os.mkdir(folder+'/constant/geometry')
+            if not os.path.isdir(folder+'/system'):
+                os.mkdir(folder+'/system')
+            self.blockMeshDictPath = folder + '/system/blockMeshDict'
+            self.geomPath = folder+'/constant/geometry'
         else:
             self.tempdir = tempfile.mkdtemp()
             self.blockMeshDictPath = self.tempdir+"/system/blockMeshDict"
@@ -52,20 +51,20 @@ class PreviewMesh():
 
         bmFile.write("}\nvertices\n(\n")
         for i,v in enumerate(verts):
-            if i in projections['vert']:
-                bmFile.write('    project ({} {} {}) ({})\n'.format(*v,projections['vert'][i]))
+            if i in projections['vert2surf']:
+                bmFile.write('    project ({} {} {}) ({})\n'.format(*v,projections['vert2surf'][i]))
             else:
                 bmFile.write('    ({} {} {})\n'.format(*v))
 
         bmFile.write(");\nedges\n(\n")
-        for key, value in projections['edge'].items():
+        for key, value in projections['edge2surf'].items():
             # for v in value:
             bmFile.write('    projectCurve {} {} ({})\n'.format(*key, value))
         for pl in polyLines:
             bmFile.write(pl)
 
         bmFile.write(");\nfaces\n(\n")
-        for key, value in projections['face'].items():
+        for key, value in projections['face2surf'].items():
             # for v in value:
             bmFile.write('    project ({} {} {} {}) {}\n'.format(*key,value))
 
