@@ -16,8 +16,6 @@
 #
 # ##### END GPL LICENSE BLOCK #####
 
-# <pep8 compliant>
-
 import bpy
 from mathutils import Vector, Matrix, Euler
 import bgl
@@ -102,41 +100,6 @@ def previewMesh(ob, points, faces):
     bpy.ops.object.mode_set(mode='OBJECT')
     previewMeshOb.show_all_edges = True
     previewMeshOb.show_wire = True
-
-def initDependentEdges(ob):
-    me = ob.data
-    detemp = []
-    ngroups = 0
-    edges = list(edges_from_mesh(ob))
-    # aligned_edges = [[] for i in range(len(edges))]
-    def edgeFinder(v0, v1, edgeList):
-        if [v0, v1] in edgeList:
-            return edgeList.index([v0, v1])
-        if [v1, v0] in edgeList:
-            return edgeList.index([v1, v0])
-        return -1
-
-    for de in ob.dependent_edges:
-        detemp.append(list(de.dependent_edge))
-        ngroups = max(ngroups,int(de.dependent_edge[0]))
-
-    dependent_edges = [[] for i in range(ngroups+1)]
-    for e in detemp:
-        i = edgeFinder(e[1],e[2],edges)
-        dependent_edges[e[0]].append(me.edges[i])
-
-    ob['aligned_group'] = dependent_edges
-    # dependent_edges = [[] for i in range(ngroups+1)]
-    # for e in detemp:
-        # i = edgeFinder(e[1],e[2],edges)
-        # dependent_edges[e[0]].append([e[1],e[2]])
-    # dependent_edges = [[] for i in range(ngroups+1)]
-    # for e in detemp:
-        # dependent_edges[e[0]].append([e[1],e[2]])
-        # i = edgeFinder(e[1],e[2],edges)
-        # aligned_edges[i] = e[0]
-    # print(aligned_edges)
-    # for de in dependent_edges:
 
 arrow_head = [
     [-1,-1],
