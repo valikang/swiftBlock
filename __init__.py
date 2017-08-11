@@ -107,9 +107,18 @@ class SwiftBlockPanel(bpy.types.Panel):
                     o.ob = ob.EdgeSnapObject
             else:
                 box.prop(ob, "Autosnap")
+            box.prop(ob,"ShowInternalFaces")
 
             box = self.layout.box()
             box.label('Boundary conditions')
+            row = self.layout.row()
+            row.template_list("boundary_items", "", ob, "boundaries", ob, "boundary_index", rows=2)
+            col = row.column(align=True)
+            col.operator("boundaries.action", icon='ZOOMIN', text="").action = 'ADD'
+            col.operator("boundaries.action", icon='ZOOMOUT', text="").action = 'REMOVE'
+            row = self.layout.row()
+            row.operator('boundaries.action', 'Assign').action = 'ASSIGN'
+
             box.prop(ob, 'patchName')
             box.prop(ob, 'bcTypeEnum')
             box.operator("set.patchname")
@@ -149,6 +158,28 @@ def initSwiftBlockProperties():
     bpy.types.Object.Mesher = bpy.props.EnumProperty(name="",
             items = (("blockMeshMG","blockMeshMG","",1),
                      ("blockMeshBodyFit","blockMeshBodyFit","",2),),update=changeMesher)
+
+
+# Blocking properties
+    bpy.types.Object.blocks = \
+        bpy.props.CollectionProperty(type=BlockProperty)
+    bpy.types.Object.block_index = bpy.props.IntProperty()
+
+
+# Projection/snapping properties
+    bpy.types.Object.projections = \
+        bpy.props.CollectionProperty(type=ProjectionProperty)
+    bpy.types.Object.projection_index = bpy.props.IntProperty()
+
+    bpy.types.Object.Autosnap = bpy.props.BoolProperty(name="Automatic edge projection",
+            description = "Snap lines automatically from geometry?")
+    bpy.types.Object.ShowInternalFaces = bpy.props.BoolProperty(name="Show Internal Faces",
+            default=False, update=showInternalFaces)
+    bpy.types.Object.ProjectionObject = bpy.props.EnumProperty(name="Projection object", 
+            items=getProjectionObjects, description = "Projection object")
+    bpy.types.Object.EdgeSnapObject = bpy.props.EnumProperty(name="Object", 
+            items=getProjectionObjects, description = "Projection object")
+
 # Mapping properties
     bpy.types.Object.MappingType = bpy.props.EnumProperty(name="",
             items = (("Geometric MG","Geometric MG","",1),
@@ -163,12 +194,6 @@ def initSwiftBlockProperties():
     bpy.types.Object.SearchLength = bpy.props.FloatProperty(name="Search Length", default=1.0, description="", min=0)
     # bpy.types.Object.ShowEdgeDirections = bpy.props.BoolProperty(name="Show directions", default=True, update = updateDirections, description="Show edge directions?")
 
-
-# Blocking properties
-    bpy.types.Object.blocks = \
-        bpy.props.CollectionProperty(type=BlockProperty)
-    bpy.types.Object.block_index = bpy.props.IntProperty()
-
 # Boundary condition properties
     bpy.types.Object.bcTypeEnum = bpy.props.EnumProperty(
         items = [('wall', 'wall', 'Defines the patch as wall'),
@@ -182,17 +207,9 @@ def initSwiftBlockProperties():
         description = "Specify name of patch",
         default = "defaultName")
 
-# Projection/snapping properties
-    bpy.types.Object.projections = \
-        bpy.props.CollectionProperty(type=ProjectionProperty)
-    bpy.types.Object.projection_index = bpy.props.IntProperty()
-
-    bpy.types.Object.Autosnap = bpy.props.BoolProperty(name="Automatic edge projection",
-            description = "Snap lines automatically from geometry?")
-    bpy.types.Object.ProjectionObject = bpy.props.EnumProperty(name="Projection object", 
-            items=getProjectionObjects, description = "Projection object")
-    bpy.types.Object.EdgeSnapObject = bpy.props.EnumProperty(name="Object", 
-            items=getProjectionObjects, description = "Projection object")
+    bpy.types.Object.boundaries = \
+        bpy.props.CollectionProperty(type=BoundaryProperty)
+    bpy.types.Object.boundary_index = bpy.props.IntProperty(update=selectActiveBoundary)
 
 # Edge group properties
     bpy.types.Object.edge_groups = \
@@ -217,6 +234,76 @@ class block_items(bpy.types.UIList):
         else:
             c = split.operator('enable.block','', emboss=False,icon="CHECKBOX_DEHLT").blockid = index
 
+class boundary_items(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        ob = data
+        boundary = context.active_object.boundaries[index]
+        split = layout.split(percentage=0.2)
+        split.prop(item,"color", '')
+        split.prop(item,"name", '', emboss = False)
+        split.prop(item,"type", '', emboss = False)
+
+class boundaries_action(bpy.types.Operator):
+    bl_idname = "boundaries.action"
+    bl_label = "Boundaries action"
+
+    action = bpy.props.EnumProperty(
+        items=(
+            ('REMOVE', "Remove", ""),
+            ('ADD', "Add", ""),
+            ('ASSIGN', "Assign", ""),
+        )
+    )
+
+    def invoke(self, context, event):
+
+        ob = context.active_object
+        idx = ob.boundary_index
+        bm = bmesh.from_edit_mesh(ob.data)
+
+        try:
+            item = ob.boundaries[idx]
+        except IndexError:
+            pass
+
+        else:
+            if self.action == 'REMOVE':
+                if item.name in ob.data.materials:
+                    mat = bpy.data.materials[item.name]
+                    patchindex = list(ob.data.materials).index(mat)
+                    ob.data.materials.pop(patchindex)
+                    if not mat.users:
+                        bpy.data.materials.remove(mat)
+                ob.boundary_index -= 1
+                ob.boundaries.remove(idx)
+
+            elif self.action == 'ASSIGN':
+                mat = bpy.data.materials[item.name]
+                patchindex = list(ob.data.materials).index(mat)
+                for f in bm.faces:
+                    if f.select:
+                        f.material_index = patchindex
+                ob.data.update()
+
+        if self.action == 'ADD':
+            name = 'default'
+            mat = bpy.data.materials.new(name)
+            mat.diffuse_color = patchColor(len(ob.data.materials))
+            ob.data.materials.append(mat)
+            material_id = ob.data.materials.find(name)
+            for f in bm.faces:
+                if f.select:
+                    f.material_index = material_id
+
+            b = ob.boundaries.add()
+            print(material_id)
+            b.id = material_id
+            b.name = ob.data.materials[-1].name 
+            b.type = 'patch'
+            b.color = mat.diffuse_color
+
+        return {"FINISHED"}
+
 class projection_items(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         split = layout.split(0.4)
@@ -236,7 +323,6 @@ class projection_items(bpy.types.UIList):
         c = split.operator('remove.projection','', emboss = False, icon='X')
         c.proj_id = index
 
-
 # Get all objects in current context
 def getProjectionObjects(self, context):
     obs = []
@@ -255,16 +341,39 @@ class BlockProperty(bpy.types.PropertyGroup):
     namedRegion = bpy.props.BoolProperty(default=False)
 bpy.utils.register_class(BlockProperty)
 
-class EdgeGroupProperty(bpy.types.PropertyGroup):
-    group_name = bpy.props.StringProperty()
-    group_edges = bpy.props.StringProperty()
-bpy.utils.register_class(EdgeGroupProperty)
-
 class ProjectionProperty(bpy.types.PropertyGroup):
     type = bpy.props.StringProperty() #vert,edge,face
     id = bpy.props.IntProperty() #bmesh id
     ob = bpy.props.StringProperty()
 bpy.utils.register_class(ProjectionProperty)
+
+
+def updateBoundaryColor(self, context):
+    mat = bpy.data.materials[self.name]
+    mat.diffuse_color = self.color
+
+def updateBoundaryName(self, context):
+    mat = context.active_object.data.materials[self.material_id]
+    mat.name = self.name
+
+class BoundaryProperty(bpy.types.PropertyGroup):
+    type = bpy.props.EnumProperty(
+        items = [('wall', 'wall',''),
+             ('patch', 'patch',''),
+             ('empty', 'empty',''),
+             ('symmetry', 'symmetry',''),
+             ],
+        name = "Patch type")
+    material_id = bpy.props.IntProperty()
+    material_name = bpy.props.IntProperty()
+    name = bpy.props.StringProperty(update=updateBoundaryName)
+    color = bpy.props.FloatVectorProperty(subtype = 'COLOR', update=updateBoundaryColor)
+bpy.utils.register_class(BoundaryProperty)
+
+class EdgeGroupProperty(bpy.types.PropertyGroup):
+    group_name = bpy.props.StringProperty()
+    group_edges = bpy.props.StringProperty()
+bpy.utils.register_class(EdgeGroupProperty)
 
 # Initialize all the bmesh layer properties for the blocking object
 class InitBlockingObject(bpy.types.Operator):
@@ -292,6 +401,8 @@ class InitBlockingObject(bpy.types.Operator):
 
         bm.faces.layers.int.new('pos')
         bm.faces.layers.int.new('neg')
+        bm.faces.layers.int.new('enabled')
+        bm.faces.layers.string.new('boundary')
 
         ob.blocks.clear()
         ob.projections.clear()
@@ -299,9 +410,9 @@ class InitBlockingObject(bpy.types.Operator):
 
         ob.data.update()
         ob.isblockingObject = True
-        bpy.ops.mesh.select_all(action="SELECT")
-        bpy.ops.set.patchname('INVOKE_DEFAULT')
-        bpy.ops.mesh.select_all(action="DESELECT")
+        # bpy.ops.mesh.select_all(action="SELECT")
+        # bpy.ops.set.patchname('INVOKE_DEFAULT')
+        # bpy.ops.mesh.select_all(action="DESELECT")
         ob.show_all_edges = True
         ob.show_wire = True
         return {"FINISHED"}
@@ -364,6 +475,7 @@ class BuildBlocking(bpy.types.Operator):
 
         negl = bm.faces.layers.int.get('neg')
         posl = bm.faces.layers.int.get('pos')
+        enabledl = bm.faces.layers.int.get('enabled')
 
         for key, value in face_info.items():
             # probably a bug, some extra faces which do not belong to any block
@@ -373,6 +485,7 @@ class BuildBlocking(bpy.types.Operator):
             f = bm.faces.get(verts)
             if not f:
                 f = bm.faces.new(verts)
+            f[enabledl] = True
             if value['pos']:
                 f[posl] = value['pos'][0]
                 dec = sum(x < f[posl] for x in decrease)
@@ -463,25 +576,32 @@ def writeMesh(ob, filename = ''):
     for e in detemp:
         block_edges[e[0]].append([e[1],e[2]])
 
+    enabledl = bm.faces.layers.int.get('enabled')
     bm.verts.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
     bm.faces.ensure_lookup_table()
 
     projections = {'vert':dict(),'edge':dict(),'face':dict(), 'geo':dict()}
     for p in ob.projections:
-        if p.type == 'vert' and not bm.verts[p.id].hide:
-            key = bm.verts[p.id].index
-            if key in projections[p.type]:
-                projections[p.type][key] += " {}".format(p.ob)
-            else:
-                projections[p.type][key] = p.ob
+        if p.type == 'vert':
+            for f in bm.verts[p.id].link_faces:
+                if f[enabledl]:
+                    key = bm.verts[p.id].index
+                    if key in projections[p.type]:
+                        projections[p.type][key] += " {}".format(p.ob)
+                    else:
+                        projections[p.type][key] = p.ob
+                    continue
         elif p.type == 'edge' and not bm.edges[p.id].hide:
-            key = tuple(v.index for v in bm.edges[p.id].verts)
-            if key in projections[p.type]:
-                projections[p.type][key] += " {}".format(p.ob)
-            else:
-                projections[p.type][key] = p.ob
-        elif p.type == 'face' and not bm.faces[p.id].hide:
+            for f in bm.edges[p.id].link_faces:
+                if f[enabledl]:
+                    key = tuple(v.index for v in bm.edges[p.id].verts)
+                    if key in projections[p.type]:
+                        projections[p.type][key] += " {}".format(p.ob)
+                    else:
+                        projections[p.type][key] = p.ob
+                    continue
+        elif p.type == 'face' and bm.faces[p.id][enabledl]:
             key = tuple(v.index for v in bm.faces[p.id].verts)
             projections[p.type][key] = p.ob
 
@@ -1078,6 +1198,17 @@ class ActivateSnap(bpy.types.Operator):
         return {'FINISHED'}
 
 # Boundary condition operators
+def selectActiveBoundary(self, context):
+    ob = context.active_object
+    bm = bmesh.from_edit_mesh(ob.data)
+    boundary = ob.boundaries[ob.boundary_index]
+    material_id = bpy.data.materials.find(boundary.name)
+    bpy.ops.mesh.select_all(action='DESELECT')
+    for f in bm.faces:
+        if f.material_index == material_id:
+            f.select = True
+
+
 def patchColor(patch_no):
     color = [(0.25,0.25,0.25), (1.0,0.,0.), (0.0,1.,0.),(0.0,0.,1.),(0.707,0.707,0),(0,0.707,0.707),(0.707,0,0.707)]
     return color[patch_no % len(color)]
@@ -1090,6 +1221,16 @@ class OBJECT_OT_SetPatchName(bpy.types.Operator):
     def execute(self, context):
         scn = context.scene
         ob = context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+        boundaryl = bm.faces.layers.string.get('boundary')
+        b = ob.boundaries.add()
+        b.name = ob.patchName
+        b.type = ob.bcTypeEnum
+        for f in bm.faces:
+            if f.select:
+                f[boundaryl] = b.name.encode()
+        b.color = patchColor(len(ob.boundaries))
+
         bpy.ops.object.mode_set(mode='OBJECT')
         NoSelected = 0
         for f in ob.data.polygons:
@@ -1307,33 +1448,56 @@ class DrawEdgeDirections(bpy.types.Operator):
     def remove(self, context, ob):
         context.scene.objects.unlink(ob)
         bpy.data.objects.remove(ob)
+def showInternalFaces(self, context):
+    ob = context.active_object
+    hideFacesEdges(ob, ob.ShowInternalFaces)
 
-def hideFacesEdges(ob):
+def hideFacesEdges(ob, showInternal=False):
     ob.data.update()
     bm = bmesh.from_edit_mesh(ob.data)
     bm.verts.ensure_lookup_table()
 
     negl = bm.faces.layers.int.get('neg')
     posl = bm.faces.layers.int.get('pos')
+    enabledl = bm.faces.layers.int.get('enabled')
 
     for f in bm.faces:
-        if f[negl] != -1 and f[posl] != -1: #internal face
+        if f[negl] != -1 and f[posl] != -1: 
             if (not ob.blocks[f[posl]].enabled and ob.blocks[f[negl]].enabled) \
                     or (ob.blocks[f[posl]].enabled and not ob.blocks[f[negl]].enabled):
+                # boundary face
                 f.hide_set(False)# = False
+                f[enabledl] = True
+            elif not ob.blocks[f[posl]].enabled and not ob.blocks[f[negl]].enabled:
+                # both blocks disabled
+                f[enabledl] = False
+                f.hide = True
+            elif showInternal:
+                # internal face
+                f[enabledl] = True
+                f.hide_set(False)
             else:
-                # f.hide_set(True)# = True
+                # internal face
+                f[enabledl] = True
                 f.hide = True
         elif (f[posl] == -1 and f[negl] != -1): #boundary face
             if ob.blocks[f[negl]].enabled:
+                # boundary face
                 f.hide_set(False)# = False
+                f[enabledl] = True
             else:
-                f.hide_set(True)# = True
+                # boundary block disabled
+                f.hide_set(True)
+                f[enabledl] = False
         elif (f[posl] != -1 and f[negl] == -1): #boundary face
             if ob.blocks[f[posl]].enabled:
+                # boundary face
                 f.hide_set(False)
+                f[enabledl] = True
             else:
+                # boundary block disabled
                 f.hide_set(True)
+                f[enabledl] = False
 
     for e in bm.edges:
         edge_found = False
