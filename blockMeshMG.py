@@ -36,15 +36,10 @@ class PreviewMesh():
             cd.write(self.header())
             print('OpenFOAM temp directory: {}'.format(self.tempdir))
 
-    def writeBlockMeshDict(self, verts, convertToMeters, patchnames, polyLines, edgeInfo, blockNames, blocks, dependent_edges,\
+    def writeBlockMeshDict(self, verts, convertToMeters, boundaries, polyLines, edgeInfo, blockNames, blocks, dependent_edges,\
             projections):
-        patchfaces = []
-        for pn in patchnames:
-            for vl in pn[2]:
-                patchfaces.append(vl)
         bmFile = open(self.blockMeshDictPath,'w')
         bmFile.write(self.header())
-        # bmFile.write("\nconvertToMeters " + str(convertToMeters) + ";\n\nvertices\n(\n")
         bmFile.write('\ngeometry\n{\n')
         for g in projections['geo']:
             bmFile.write('   {geo}\n   {{\n      type triSurfaceMesh;\n      file "{geo}.stl";\n   }}\n'.format(geo=g))
@@ -58,7 +53,6 @@ class PreviewMesh():
 
         bmFile.write(");\nedges\n(\n")
         for key, value in projections['edge2surf'].items():
-            # for v in value:
             bmFile.write('    projectCurve {} {} ({})\n'.format(*key, value))
         for pl in polyLines:
             bmFile.write(pl)
@@ -90,13 +84,11 @@ class PreviewMesh():
                        + blockName + ' ({} {} {}) '.format(ires,jres,kres)\
                        + 'edgeGrading (' + gradingStr + '\n)\n' )
         bmFile.write(');\n\npatches\n(\n')
-        for pn in patchnames:
-            if not len(pn[2]) == 0:
-                bmFile.write('    {} {}\n    (\n'.format(pn[0],pn[1]))
-                for pl in pn[2]:
-                    bmFile.write('        ({} {} {} {})\n'.format(*pl))
-                bmFile.write('    )\n')
-
+        for b in boundaries:
+            bmFile.write('     {} {}\n    (\n'.format(b['type'],b['name'] ))
+            for v in b['faceVerts']:
+                bmFile.write('        ({} {} {} {})\n'.format(*v))
+            bmFile.write('    )\n')
         bmFile.write(');')
         bmFile.close()
         return NoCells

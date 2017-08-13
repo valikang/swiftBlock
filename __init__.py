@@ -88,9 +88,8 @@ class SwiftBlockPanel(bpy.types.Panel):
             else:
                 box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_DEHLT").show=True
 
-            box = self.layout.box()
-            
             box.label("Projections")
+            box = self.layout.box()
             split = box.split()
             split.prop(ob, "ProjectionObject","",icon = "OUTLINER_OB_SURFACE")
             split.operator("add.projections", text="Add projections")
@@ -121,21 +120,21 @@ class SwiftBlockPanel(bpy.types.Panel):
             row = self.layout.row()
             row.operator('boundaries.action', 'Assign').action = 'ASSIGN'
 
-            box.prop(ob, 'patchName')
-            box.prop(ob, 'bcTypeEnum')
-            box.operator("set.patchname")
-            for m in ob.data.materials:
-                try:
-                    patchtype = str(' ' + m['patchtype'])
-                    split = box.split(percentage=0.2, align=True)
-                    col = split.column()
-                    col.prop(m, "diffuse_color", text="")
-                    col = split.column()
-                    col.operator("set.getpatch", text=m.name + patchtype, emboss=False).whichPatch = m.name
-                except:
-                    pass
-            box = self.layout.box()
+            # box.prop(ob, 'patchName')
+            # box.prop(ob, 'bcTypeEnum')
+            # box.operator("set.patchname")
+            # for m in ob.data.materials:
+                # try:
+                    # patchtype = str(' ' + m['patchtype'])
+                    # split = box.split(percentage=0.2, align=True)
+                    # col = split.column()
+                    # col.prop(m, "diffuse_color", text="")
+                    # col = split.column()
+                    # col.operator("set.getpatch", text=m.name + patchtype, emboss=False).whichPatch = m.name
+                # except:
+                    # pass
 
+            # box = self.layout.box()
             # box.label("Edge groups")
             # split = box.split(percentage=0.9)
             # split.prop(ob, 'EdgeGroupName','')
@@ -151,11 +150,9 @@ class SwiftBlockPanel(bpy.types.Panel):
 def initSwiftBlockProperties():
     bpy.types.Object.isblockingObject = bpy.props.BoolProperty(default=False)
     bpy.types.Object.blocking_object = bpy.props.StringProperty(default="")
-    bpy.types.Object.preview_object = bpy.props.StringProperty(default="")
     bpy.types.Object.ispreviewObject = bpy.props.BoolProperty(default=False)
     bpy.types.Object.direction_object = bpy.props.StringProperty(default="")
     bpy.types.Object.isdirectionObject = bpy.props.BoolProperty(default=False)
-    bpy.types.Object.isprojectionObject = bpy.props.BoolProperty(default=False)
 
     bpy.types.Object.Mesher = bpy.props.EnumProperty(name="",
             items = (("blockMeshMG","blockMeshMG","",1),
@@ -194,7 +191,7 @@ def initSwiftBlockProperties():
     bpy.types.Object.r2 = bpy.props.FloatProperty(name="r2", default=1.2, description="Last boundary layer geometric ratio", min=1.0)
     bpy.types.Object.Ratio = bpy.props.FloatProperty(name="Ratio", default=1.0, description="Ratio of first cell to last cell", min=0)
     bpy.types.Object.SearchLength = bpy.props.FloatProperty(name="Search Length", default=1.0, description="", min=0)
-    # bpy.types.Object.ShowEdgeDirections = bpy.props.BoolProperty(name="Show directions", default=True, update = updateDirections, description="Show edge directions?")
+    # bpy.types.Object.ShowEdgeDirections = bpy.props.BoolProperty(name="Show directions", default=True, update = updateEdgeDirections, description="Show edge directions?")
 
 # Boundary condition properties
     bpy.types.Object.bcTypeEnum = bpy.props.EnumProperty(
@@ -239,7 +236,7 @@ class block_items(bpy.types.UIList):
 class boundary_items(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         ob = data
-        boundary = context.active_object.boundaries[index]
+        # mat = me.materials[index]
         split = layout.split(percentage=0.2)
         split.prop(item,"color", '')
         split.prop(item,"name", '', emboss = False)
@@ -271,7 +268,7 @@ class boundaries_action(bpy.types.Operator):
         else:
             if self.action == 'REMOVE':
                 if item.name in ob.data.materials:
-                    mat = bpy.data.materials[item.name]
+                    mat = ob.data.materials[idx]
                     patchindex = list(ob.data.materials).index(mat)
                     ob.data.materials.pop(patchindex)
                     if not mat.users:
@@ -290,19 +287,20 @@ class boundaries_action(bpy.types.Operator):
         if self.action == 'ADD':
             name = 'default'
             mat = bpy.data.materials.new(name)
-            mat.diffuse_color = patchColor(len(ob.data.materials))
+            color = patchColor(len(ob.data.materials))
+            mat.diffuse_color = color
             ob.data.materials.append(mat)
-            material_id = ob.data.materials.find(name)
+            patchindex = list(ob.data.materials).index(mat)
             for f in bm.faces:
                 if f.select:
-                    f.material_index = material_id
-
+                    f.material_index = patchindex
             b = ob.boundaries.add()
-            print(material_id)
-            b.id = material_id
-            b.name = ob.data.materials[-1].name 
+            b.oldName = mat.name
+            b.name = mat.name 
             b.type = 'patch'
-            b.color = mat.diffuse_color
+            b.color = color
+            ob.boundary_index = len(ob.boundaries)-1
+            ob.data.update()
 
         return {"FINISHED"}
 
@@ -350,12 +348,15 @@ bpy.utils.register_class(ProjectionProperty)
 
 
 def updateBoundaryColor(self, context):
+    ob = context.active_object
     mat = bpy.data.materials[self.name]
     mat.diffuse_color = self.color
 
 def updateBoundaryName(self, context):
-    mat = context.active_object.data.materials[self.material_id]
+    ob = context.active_object
+    mat = bpy.data.materials[self.oldName]
     mat.name = self.name
+    self.oldName = mat.name
 
 class BoundaryProperty(bpy.types.PropertyGroup):
     type = bpy.props.EnumProperty(
@@ -365,8 +366,7 @@ class BoundaryProperty(bpy.types.PropertyGroup):
              ('symmetry', 'symmetry',''),
              ],
         name = "Patch type")
-    material_id = bpy.props.IntProperty()
-    material_name = bpy.props.IntProperty()
+    oldName = bpy.props.StringProperty()
     name = bpy.props.StringProperty(update=updateBoundaryName)
     color = bpy.props.FloatVectorProperty(subtype = 'COLOR', update=updateBoundaryColor)
 bpy.utils.register_class(BoundaryProperty)
@@ -400,14 +400,14 @@ class InitBlockingObject(bpy.types.Operator):
         bm.edges.layers.int.new("groupid")
         bm.edges.layers.int.new("modtime")
 
-        bm.faces.layers.int.new('pos')
-        bm.faces.layers.int.new('neg')
-        bm.faces.layers.int.new('enabled')
-        bm.faces.layers.string.new('boundary')
+        bm.faces.layers.int.new('pos') # block number on positive side of the face, -1 boundary face
+        bm.faces.layers.int.new('neg') # block number on negative side of the face, -1 boundary face
+        bm.faces.layers.int.new('enabled') # 0 = disabled, 1 = boundary face, 2 = internal face
 
         ob.blocks.clear()
         ob.projections.clear()
         ob.edge_groups.clear()
+        bpy.ops.boundaries.action("INVOKE_DEFAULT",action='ADD')
 
         ob.isblockingObject = True
         ob.data.update()
@@ -424,22 +424,20 @@ class BuildBlocking(bpy.types.Operator):
 
     def invoke(self, context, event):
         ob = context.active_object
-        mesh = ob.data
-        mesh.update()
+        bm = bmesh.from_edit_mesh(ob.data)
 
         verts = []
         edges = []
 
-        edgeDict = dict()
-        for v in mesh.vertices:
+        for v in bm.verts:
             verts.append(v.co)
-        for e in mesh.edges:
-            edges.append([e.vertices[0],e.vertices[1]])
-            edgeDict[(e.vertices[0],e.vertices[1])] = e.index
-        disabled = []
+        for e in bm.edges:
+            edges.append([e.verts[0].index,e.verts[1].index])
+
+        disabled = [] #not needed anymore
 
         # find blocking
-        log, block_verts, block_edges, face_info, all_edges, faces_as_list_of_nodes = blockBuilder.blockFinder(edges,verts,disabled = disabled)
+        log, block_verts, block_edges, face_info, all_edges, faces_as_list_of_nodes = blockBuilder.blockFinder(edges, verts, disabled = disabled)
 
 
         ob.blocks.clear()
@@ -449,7 +447,6 @@ class BuildBlocking(bpy.types.Operator):
             b.name = 'block'#_{}'.format(i)
             b.verts = bv
 
-        bm = bmesh.from_edit_mesh(ob.data)
         groupl = bm.edges.layers.int.get('groupid')
         bm.verts.ensure_lookup_table()
 
@@ -487,7 +484,7 @@ class BuildBlocking(bpy.types.Operator):
             f = bm.faces.get(verts)
             if not f:
                 f = bm.faces.new(verts)
-            f[enabledl] = True
+            f[enabledl] = -1
             block_faces.append(f)
             if value['pos']:
                 f[posl] = value['pos'][0]
@@ -525,7 +522,7 @@ class BuildBlocking(bpy.types.Operator):
                     ei.vertices = (e1, e0)
         bpy.ops.object.mode_set(mode='EDIT')
 
-        hideFacesEdges(ob)
+        hideFacesEdges(ob, ob.ShowInternalFaces)
         bpy.ops.draw.directions('INVOKE_DEFAULT',show=False)
         self.report({'INFO'}, "Number of blocks: {}".format(len(block_verts)))
         return {"FINISHED"}
@@ -537,9 +534,8 @@ def writeMesh(ob, folder = ''):
         bpy.ops.build.blocking('INVOKE_DEFAULT')
 
     verts = list(blender_utils.vertices_from_mesh(ob))
-
-
     bm = bmesh.from_edit_mesh(ob.data)
+
     # do not write polylines for hidden edges
     edges = []
     for e in bm.edges:
@@ -591,50 +587,39 @@ def writeMesh(ob, folder = ''):
 
     projections = {'vert2surf':dict(),'edge2surf':dict(),'face2surf':dict(), 'geo':dict()}
     for p in ob.projections:
-        if p.type == 'vert2surf' and not bm.verts[p.id].hide:
+        if p.type == 'vert2surf' and any([f[enabledl] for f in bm.verts[p.id].link_faces]):
             key = bm.verts[p.id].index
             if key in projections[p.type]:
                 projections[p.type][key] += " {}".format(p.ob)
             else:
                 projections[p.type][key] = p.ob
-        elif p.type == 'edge2surf' and not bm.edges[p.id].hide:
+        elif p.type == 'edge2surf' and any([f[enabledl] for f in bm.edges[p.id].link_faces]):
             key = tuple(v.index for v in bm.edges[p.id].verts)
             if key in projections[p.type]:
                 projections[p.type][key] += " {}".format(p.ob)
             else:
                 projections[p.type][key] = p.ob
-        elif p.type == 'face2surf' and not bm.faces[p.id].hide:
+        elif p.type == 'face2surf' and bm.faces[p.id][enabledl]:
             key = tuple(v.index for v in bm.faces[p.id].verts)
             projections[p.type][key] = p.ob
 
     selected_edges = [e.select for e in ob.data.edges]
 
-    patchnames = list()
-    patchtypes = list()
-    patchverts = list()
-    patches = list()
-    bpy.ops.object.mode_set(mode='EDIT')
-    for mid, m in enumerate(ob.data.materials):
-        bpy.ops.mesh.select_all(action='DESELECT')
-        ob.active_material_index = mid
-        bpy.ops.object.material_slot_select()
-        bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.ops.object.mode_set(mode='EDIT')
-        faces = ob.data.polygons
-        for f in faces:
-            if f.select and f.material_index == mid:
-                if m.name in patchnames:
-                    ind = patchnames.index(m.name)
-                    patchverts[ind].append(list(f.vertices))
-                else:
-                    patchnames.append(m.name)
-                    patchtypes.append(m['patchtype'])
-                    patchverts.append([list(f.vertices)])
+    boundaries = []
+    for i,b in enumerate(ob.boundaries):
+        boundary = dict()
+        boundary['name'] = b.name
+        boundary['type'] = b.type
+        boundary['faceVerts'] = []
+        boundaries.append(boundary)
 
-    for ind,pt in enumerate(patchtypes):
-        patches.append([pt])
-        patches[ind].append(patchnames[ind])
-        patches[ind].append(patchverts[ind])
+    for f in bm.faces:
+        if f[enabledl] == 1:
+            if f.material_index in boundaries:
+                boundaries[f.material_index]['faceVerts'].append([v.index for v in f.verts])
+    for b in boundaries:
+        if not b['faceVerts']:
+            boundaries.remove(b)
 
 # return edge selection
     bpy.ops.mesh.select_all(action='DESELECT')
@@ -655,8 +640,7 @@ def writeMesh(ob, folder = ''):
             geos = writeProjectionObjects(ob, mesh.geomPath)
             projections['geo'] = geos
 
-        cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, projections)
-        # cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, projection_geos, project_verts, project_edges, project_faces)
+        cells = mesh.writeBlockMeshDict(verts, 1, boundaries, polyLines, edgeInfo, block_names, blocks, block_edges, projections)
 ###############################################################
     elif ob.Mesher == 'blockMeshBodyFit':
         from . import blockMeshBodyFit
@@ -666,7 +650,7 @@ def writeMesh(ob, folder = ''):
         else:
             mesh = blockMeshBodyFit.PreviewMesh()
         writeProjectionObjects(ob, mesh.triSurfacePath, onlyFaces = True)
-        cells = mesh.writeBlockMeshDict(verts, 1, patches, polyLines, edgeInfo, block_names, blocks, block_edges, projections, ob.SearchLength)
+        cells = mesh.writeBlockMeshDict(verts, 1, boundaries, polyLines, edgeInfo, block_names, blocks, block_edges, projections, ob.SearchLength)
     bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,True,False)")
     return mesh, cells
 
@@ -1040,6 +1024,7 @@ def collectEdges(bob, lengths):
         block_edges[(e.verts[0].index,e.verts[1].index)] = be
     return block_edges
 
+
 # Projection operators
 
 class GetProjection(bpy.types.Operator):
@@ -1059,12 +1044,12 @@ class GetProjection(bpy.types.Operator):
     def execute(self, context):
         ob = context.active_object
         bm = bmesh.from_edit_mesh(ob.data)
-        if self.type == 'vert':
+        if self.type == 'vert2surf':
             bm.verts.ensure_lookup_table()
             bm.verts[self.id].select = True
-        elif self.type == 'edge':
+        elif self.type == 'edge2surf':
             bm.edges[self.id].select = True
-        elif self.type == 'face':
+        elif self.type == 'face2surf':
             bm.faces[self.id].select = True
         ob.data.update()
         return {'FINISHED'}
@@ -1171,7 +1156,7 @@ class RemoveProjections(bpy.types.Operator):
             ob.projections.remove(i)
         return {"FINISHED"}
 
-def writeProjectionObjects(ob, path, onlyFaces = True):
+def writeProjectionObjects(ob, path, onlyFaces = False):
     objects = []
     for p in ob.projections:
         if onlyFaces and not p.type == 'face2surf':
@@ -1247,7 +1232,7 @@ def selectActiveBoundary(self, context):
     ob = context.active_object
     bm = bmesh.from_edit_mesh(ob.data)
     boundary = ob.boundaries[ob.boundary_index]
-    material_id = bpy.data.materials.find(boundary.name)
+    material_id = ob.data.materials.find(boundary.name)
     bpy.ops.mesh.select_all(action='DESELECT')
     for f in bm.faces:
         if f.material_index == material_id:
@@ -1497,7 +1482,7 @@ def showInternalFaces(self, context):
     ob = context.active_object
     hideFacesEdges(ob, ob.ShowInternalFaces)
 
-def hideFacesEdges(ob, showInternal=False):
+def hideFacesEdges(ob, showInternal = False):
     ob.data.update()
     bm = bmesh.from_edit_mesh(ob.data)
     bm.verts.ensure_lookup_table()
@@ -1512,24 +1497,24 @@ def hideFacesEdges(ob, showInternal=False):
                     or (ob.blocks[f[posl]].enabled and not ob.blocks[f[negl]].enabled):
                 # boundary face
                 f.hide_set(False)# = False
-                f[enabledl] = True
+                f[enabledl] = 1
             elif not ob.blocks[f[posl]].enabled and not ob.blocks[f[negl]].enabled:
                 # both blocks disabled
                 f[enabledl] = False
                 f.hide = True
             elif showInternal:
                 # internal face
-                f[enabledl] = True
+                f[enabledl] = 2
                 f.hide_set(False)
             else:
                 # internal face
-                f[enabledl] = True
+                f[enabledl] = 2
                 f.hide = True
         elif (f[posl] == -1 and f[negl] != -1): #boundary face
             if ob.blocks[f[negl]].enabled:
                 # boundary face
                 f.hide_set(False)# = False
-                f[enabledl] = True
+                f[enabledl] = 1
             else:
                 # boundary block disabled
                 f.hide_set(True)
@@ -1538,7 +1523,7 @@ def hideFacesEdges(ob, showInternal=False):
             if ob.blocks[f[posl]].enabled:
                 # boundary face
                 f.hide_set(False)
-                f[enabledl] = True
+                f[enabledl] = 1
             else:
                 # boundary block disabled
                 f.hide_set(True)

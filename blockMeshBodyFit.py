@@ -38,11 +38,7 @@ class PreviewMesh():
             cd.write(self.header())
             print('OpenFOAM temp directory: {}'.format(self.tempdir))
 
-    def writeBlockMeshDict(self, verts, convertToMeters, patchnames, polyLines, edgeInfo, blockNames, blocks, dependent_edges, projections, searchLength):
-        patchfaces = []
-        for pn in patchnames:
-            for vl in pn[2]:
-                patchfaces.append(vl)
+    def writeBlockMeshDict(self, verts, convertToMeters, boundaries, polyLines, edgeInfo, blockNames, blocks, dependent_edges, projections, searchLength):
         bmFile = open(self.blockMeshDictPath,'w')
         bmFile.write(self.header())
         bmFile.write("\nconvertToMeters " + str(convertToMeters) + ";\n")
@@ -83,13 +79,11 @@ class PreviewMesh():
             bmFile.write('      );\n   }\n')
 
         bmFile.write('};\n\npatches\n(\n')
-        for pn in patchnames:
-            if not len(pn[2]) == 0:
-                bmFile.write('    {} {}\n    (\n'.format(pn[0],pn[1]))
-                for pl in pn[2]:
-                    bmFile.write('        ({} {} {} {})\n'.format(*pl))
-                bmFile.write('    )\n')
-
+        for b in boundaries:
+            bmFile.write('     {} {}\n    (\n'.format(b['type'],b['name'] ))
+            for v in b['faceVerts']:
+                bmFile.write('        ({} {} {} {})\n'.format(*v))
+            bmFile.write('    )\n')
         bmFile.write(');\n\nedges\n(\n')
         for pl in polyLines:
             bmFile.write(pl)
