@@ -151,6 +151,7 @@ def initSwiftBlockProperties():
     bpy.types.Object.isblockingObject = bpy.props.BoolProperty(default=False)
     bpy.types.Object.blocking_object = bpy.props.StringProperty(default="")
     bpy.types.Object.ispreviewObject = bpy.props.BoolProperty(default=False)
+    bpy.types.Object.preview_object = bpy.props.StringProperty(default='')
     bpy.types.Object.direction_object = bpy.props.StringProperty(default="")
     bpy.types.Object.isdirectionObject = bpy.props.BoolProperty(default=False)
 
