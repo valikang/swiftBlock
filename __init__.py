@@ -1389,8 +1389,22 @@ class BlockExtrusion(bpy.types.Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
+        ob = bpy.context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+        sel_mode = bpy.context.scene.tool_settings.mesh_select_mode
+        bpy.context.scene.tool_settings.mesh_select_mode = (False, True, False)
+        selected_faces = []
+        for f in bm.faces:
+            if f.select:
+                selected_faces.append((f,[v for v in f.verts]))
         bpy.ops.mesh.extrude_faces_move()
+        for f in selected_faces:
+            newf = bm.faces.new(f[1])
+            for p in ob.projections:
+                if p.type == 'face' and p.id == f[0].index:
+                    p.id = newf.index
         bpy.ops.mesh.remove_doubles(threshold=0.0001, use_unselected=False)
+        ob.data.update()
         bpy.ops.transform.translate('INVOKE_REGION_WIN')
         return {"FINISHED"}
 
