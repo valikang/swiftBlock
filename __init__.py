@@ -21,7 +21,6 @@ importlib.reload(blender_utils)
 from . import utils
 importlib.reload(utils)
 from mathutils import Vector
-from bpy_extras.io_utils import ExportHelper
 
 
 # Create the swiftBlock panel
@@ -88,8 +87,8 @@ class SwiftBlockPanel(bpy.types.Panel):
             else:
                 box.operator("draw.directions",'Show edge directions',emboss=False,icon="CHECKBOX_DEHLT").show=True
 
-            box.label("Projections")
             box = self.layout.box()
+            box.label("Projections")
             split = box.split()
             split.prop(ob, "ProjectionObject","",icon = "OUTLINER_OB_SURFACE")
             split.operator("add.projections", text="Add projections")
@@ -109,43 +108,16 @@ class SwiftBlockPanel(bpy.types.Panel):
                 box.prop(ob, "Autosnap")
             box.prop(ob,"ShowInternalFaces")
 
+            
             box = self.layout.box()
-
             box.label('Boundary conditions')
-            row = self.layout.row()
+            row = box.row()
             row.template_list("boundary_items", "", ob, "boundaries", ob, "boundary_index", rows=2)
             col = row.column(align=True)
             col.operator("boundaries.action", icon='ZOOMIN', text="").action = 'ADD'
             col.operator("boundaries.action", icon='ZOOMOUT', text="").action = 'REMOVE'
             row = self.layout.row()
             row.operator('boundaries.action', 'Assign').action = 'ASSIGN'
-
-            # box.prop(ob, 'patchName')
-            # box.prop(ob, 'bcTypeEnum')
-            # box.operator("set.patchname")
-            # for m in ob.data.materials:
-                # try:
-                    # patchtype = str(' ' + m['patchtype'])
-                    # split = box.split(percentage=0.2, align=True)
-                    # col = split.column()
-                    # col.prop(m, "diffuse_color", text="")
-                    # col = split.column()
-                    # col.operator("set.getpatch", text=m.name + patchtype, emboss=False).whichPatch = m.name
-                # except:
-                    # pass
-
-            # box = self.layout.box()
-            # box.label("Edge groups")
-            # split = box.split(percentage=0.9)
-            # split.prop(ob, 'EdgeGroupName','')
-            # split.operator("add.edgegroup",'',icon='PLUS',emboss = False)
-            # for eg in ob.edge_groups:
-                # split = box.split(percentage=0.8, align=True)
-                # col = split.column()
-                # col.operator("get.edgegroup", eg.group_name , emboss=False).egName = eg.group_name
-                # col = split.column()
-                # col.operator('remove.edgegroup', '',emboss=False,icon='X').egName = eg.group_name
-
 
 def initSwiftBlockProperties():
     bpy.types.Object.isblockingObject = bpy.props.BoolProperty(default=False)
