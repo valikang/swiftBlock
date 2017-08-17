@@ -208,7 +208,7 @@ class PreviewMesh():
             self.runBlockMesh()
         faces, bcifaces=self.getBCFaces2(internalCells)
         points=self.getPoints(faces)
-        # shutil.rmtree(self.tempdir)
+        shutil.rmtree(self.tempdir)
         return points, bcifaces
 
     def header(self):
