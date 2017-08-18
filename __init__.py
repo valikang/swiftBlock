@@ -112,7 +112,7 @@ class SwiftBlockPanel(bpy.types.Panel):
             box = self.layout.box()
             box.label('Boundary conditions')
             row = box.row()
-            row.template_list("boundary_items", "", ob, "boundaries", ob, "boundary_index", rows=2)
+            row.template_list("boundary_items", "", ob.data, "materials", ob, "active_material_index", rows=2)
             col = row.column(align=True)
             col.operator("boundaries.action", icon='ZOOMIN', text="").action = 'ADD'
             col.operator("boundaries.action", icon='ZOOMOUT', text="").action = 'REMOVE'
@@ -208,12 +208,17 @@ class block_items(bpy.types.UIList):
 
 class boundary_items(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        ob = data
-        # mat = me.materials[index]
+        ob = context.active_object
+        me = data
+        mat = me.materials[index]
+        for b in ob.boundaries:
+            if index == b.id:
+                boundary = b
+                break
         split = layout.split(percentage=0.2)
-        split.prop(item,"color", '')
-        split.prop(item,"name", '', emboss = False)
-        split.prop(item,"type", '', emboss = False)
+        split.prop(item, "diffuse_color", '')
+        split.prop(item, "name", '', emboss = False)
+        split.prop(b, "type", '', emboss = False)
 
 class boundaries_action(bpy.types.Operator):
     bl_idname = "boundaries.action"
@@ -230,32 +235,22 @@ class boundaries_action(bpy.types.Operator):
     def invoke(self, context, event):
 
         ob = context.active_object
-        idx = ob.boundary_index
         bm = bmesh.from_edit_mesh(ob.data)
 
-        try:
-            item = ob.boundaries[idx]
-        except IndexError:
-            pass
+        if self.action == 'REMOVE':
+            for i, b in enumerate(ob.boundaries):
+                if b.name == ob.active_material.name:
+                    ob.boundaries.remove(i)
+            mat_name = ob.active_material.name
+            ob.data.materials.pop(ob.active_material_index)
+            if not bpy.data.materials[mat_name].users:
+                bpy.data.materials.remove(bpy.data.materials[mat_name])
 
-        else:
-            if self.action == 'REMOVE':
-                if item.name in ob.data.materials:
-                    mat = ob.data.materials[idx]
-                    patchindex = list(ob.data.materials).index(mat)
-                    ob.data.materials.pop(patchindex)
-                    if not mat.users:
-                        bpy.data.materials.remove(mat)
-                ob.boundary_index -= 1
-                ob.boundaries.remove(idx)
-
-            elif self.action == 'ASSIGN':
-                mat = bpy.data.materials[item.name]
-                patchindex = list(ob.data.materials).index(mat)
-                for f in bm.faces:
-                    if f.select:
-                        f.material_index = patchindex
-                ob.data.update()
+        elif self.action == 'ASSIGN':
+            for f in bm.faces:
+                if f.select:
+                    f.material_index = ob.active_material_index
+            ob.data.update()
 
         if self.action == 'ADD':
             name = 'default'
@@ -263,15 +258,17 @@ class boundaries_action(bpy.types.Operator):
             color = patchColor(len(ob.data.materials))
             mat.diffuse_color = color
             ob.data.materials.append(mat)
-            patchindex = list(ob.data.materials).index(mat)
+            ob.active_material_index = len(ob.data.materials) - 1
+
             for f in bm.faces:
                 if f.select:
-                    f.material_index = patchindex
+                    f.material_index = ob.active_material_index
             b = ob.boundaries.add()
             b.oldName = mat.name
             b.name = mat.name 
             b.type = 'patch'
             b.color = color
+            b.id = ob.active_material_index
             ob.boundary_index = len(ob.boundaries)-1
             ob.data.update()
 
@@ -342,6 +339,7 @@ class BoundaryProperty(bpy.types.PropertyGroup):
     oldName = bpy.props.StringProperty()
     name = bpy.props.StringProperty(update=updateBoundaryName)
     color = bpy.props.FloatVectorProperty(subtype = 'COLOR', update=updateBoundaryColor)
+    id = bpy.props.IntProperty()
 bpy.utils.register_class(BoundaryProperty)
 
 class EdgeGroupProperty(bpy.types.PropertyGroup):
@@ -578,18 +576,13 @@ def writeMesh(ob, folder = ''):
 
     selected_edges = [e.select for e in ob.data.edges]
 
-    boundaries = []
-    for i,b in enumerate(ob.boundaries):
-        boundary = dict()
-        boundary['name'] = b.name
-        boundary['type'] = b.type
-        boundary['faceVerts'] = []
-        boundaries.append(boundary)
-
+    boundaryTypes = dict()
+    for b in ob.boundaries:
+        boundaryTypes[b.id] = b.type
+    boundaries = [{'name':mat.name, 'type':boundaryTypes[i], 'faceVerts':[]} for i, mat in enumerate(ob.data.materials)]
     for f in bm.faces:
         if f[enabledl] == 1:
-            if f.material_index in boundaries:
-                boundaries[f.material_index]['faceVerts'].append([v.index for v in f.verts])
+            boundaries[f.material_index]['faceVerts'].append([v.index for v in f.verts])
     for b in boundaries:
         if not b['faceVerts']:
             boundaries.remove(b)
