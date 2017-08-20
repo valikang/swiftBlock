@@ -50,7 +50,9 @@ class SwiftBlockPanel(bpy.types.Panel):
 
             box = self.layout.box()
             box.prop(ob,"Mesher")
-            box.operator("build.blocking", text="Build Blocking")
+            split = box.split(percentage=0.5)
+            split.operator("build.blocking", text="Build Blocking")
+            split.prop(ob, "useNumba")
 
             split = box.split()
             split.operator("preview.mesh", text="Preview mesh")
@@ -64,6 +66,7 @@ class SwiftBlockPanel(bpy.types.Panel):
             # box.prop(ob, "MappingType")
             split = box.split()
             split.prop(ob, "Cells")
+            # split.operator('set.cellsize')
             if ob.Mesher == "blockMeshMG":
                 split = box.split()
                 col = split.column()
@@ -136,6 +139,7 @@ def initSwiftBlockProperties():
     bpy.types.Object.blocks = \
         bpy.props.CollectionProperty(type=BlockProperty)
     bpy.types.Object.block_index = bpy.props.IntProperty()
+    bpy.types.Object.useNumba = bpy.props.BoolProperty(default=False, name="Use Numba?")
 
 
 # Projection/snapping properties
@@ -156,7 +160,7 @@ def initSwiftBlockProperties():
     bpy.types.Object.MappingType = bpy.props.EnumProperty(name="",
             items = (("Geometric MG","Geometric MG","",1),
                      ("Geometric","Geometric","",2),))
-    bpy.types.Object.Dx = bpy.props.FloatProperty(name="dx", default=1, update=setCellSize, min=0)
+    # bpy.types.Object.Dx = bpy.props.FloatProperty(name="dx", default=1, update=setCellSize, min=0)
     bpy.types.Object.Cells = bpy.props.IntProperty(name="Cells", default=10,  min=1)
     bpy.types.Object.x1 = bpy.props.FloatProperty(name="x1", default=0, description="First cell size", min=0)
     bpy.types.Object.x2 = bpy.props.FloatProperty(name="x2", default=0, description="Last cell size",  min=0)
@@ -407,8 +411,10 @@ class BuildBlocking(bpy.types.Operator):
 
         disabled = [] #not needed anymore
 
-        # find blocking
-        log, block_verts, block_edges, face_info, all_edges, faces_as_list_of_nodes = blockBuilder.blockFinder(edges, verts, disabled = disabled)
+        print('Beginning automatic block detection')
+        stime = time.time()
+        log, block_verts, block_edges, face_info, all_edges, faces_as_list_of_nodes = blockBuilder.blockFinder(edges, verts, disabled = disabled, numba = ob.useNumba)
+        print('Found {} blocks in {:.1f} seconds, used Numba={}'.format(len(block_verts), time.time()-stime,ob.useNumba))
 
 
         ob.blocks.clear()
@@ -492,11 +498,13 @@ class BuildBlocking(bpy.types.Operator):
                     (e0, e1) = ei.vertices
                     ei.vertices = (e1, e0)
         bpy.ops.object.mode_set(mode='EDIT')
-
+        updateProjections(ob)
         hideFacesEdges(ob, ob.ShowInternalFaces)
         bpy.ops.draw.directions('INVOKE_DEFAULT',show=False)
         self.report({'INFO'}, "Number of blocks: {}".format(len(block_verts)))
         return {"FINISHED"}
+
+
 
 
 # Build the mesh from already existing blocking
@@ -654,8 +662,7 @@ class WriteMesh(bpy.types.Operator):
             options={'HIDDEN'},
             )
 
-    # filename_ext = "."
-    use_filter_folder = True
+    # use_filter_folder = True
 
     def invoke(self, context, event):
         bpy.context.window_manager.fileselect_add(self)
@@ -860,28 +867,52 @@ class GetEdge(bpy.types.Operator):
                  ob.r2 = e[r2l]
         return {'FINISHED'}
 
-def setCellSize(self, context):
-    ob = context.active_object
-    scn = context.scene
+class SetCellSize(bpy.types.Operator):
+    "Calculates the number of cells from maximum cell size"
+    bl_idname = "set.cellsize"
+    bl_label = "Set cell size"
+    bl_options = {"UNDO"}
 
-    bm = bmesh.from_edit_mesh(ob.data)
-    typel = bm.edges.layers.string.get('type')
-    x1l = bm.edges.layers.float.get('x1')
-    x2l = bm.edges.layers.float.get('x2')
-    r1l = bm.edges.layers.float.get('r1')
-    r2l = bm.edges.layers.float.get('r2')
-    cellsl = bm.edges.layers.int.get('cells')
+    def execute(self, context):
+        ob = context.active_object
+        scn = context.scene
 
-    for e in bm.edges:
-        if e.select:
-            e[typel] = str.encode(ob.MappingType)
-            L = (e.verts[0].co-e.verts[1].co).length
-            N=utils.getNodes(ob.x1,ob.x2,ob.r1,ob.r2,L,ob.Dx)
-            e[cellsl] = N
-            e[x1l] = ob.x1
-            e[x2l] = ob.x2
-            e[r1l] = ob.r1
-            e[r2l] = ob.r2
+        bm = bmesh.from_edit_mesh(ob.data)
+        typel = bm.edges.layers.string.get('type')
+        x1l = bm.edges.layers.float.get('x1')
+        x2l = bm.edges.layers.float.get('x2')
+        r1l = bm.edges.layers.float.get('r1')
+        r2l = bm.edges.layers.float.get('r2')
+        cellsl = bm.edges.layers.int.get('cells')
+        verts = [v.co for v in bm.verts]
+        edges = [(e.verts[0].index, e.verts[1].index) for e in bm.edges]
+
+        if ob.Autosnap and ob.EdgeSnapObject:
+            polyLines, polyLinesPoints, lengths = getPolyLines(verts, edges, ob)
+        else:
+            polyLines = []
+            lengths = [[]]
+
+
+        for e in bm.edges:
+            if e.select:
+                ev = list([e.verts[0].index,e.verts[1].index])
+                if ev in lengths[0]:
+                    ind = lengths[0].index(ev)
+                    L = lengths[1][ind]
+                else:
+                    L = (e.verts[0].co-e.verts[1].co).length
+
+                e[typel] = str.encode(ob.MappingType)
+                N=utils.getCells(ob.x1,ob.x2,ob.r1,ob.r2,L,ob.Dx)
+                e[cellsl] = N
+                e[x1l] = ob.x1
+                e[x2l] = ob.x2
+                e[r1l] = ob.r1
+                e[r2l] = ob.r2
+                print(N)
+        return {'FINISHED'}
+
 
 class EdgeSelectParallel(bpy.types.Operator):
     bl_idname = "select.parallel"
@@ -992,7 +1023,10 @@ def collectEdges(bob, lengths):
 
 
 # Projection operators
-
+# TODO Projections are saved to a Blender CollectionProperty. At the 
+# moment if verts, edges or faces have been deleted, the id might not be  
+# up to date anymore. It would make sense to save the projections to bmesh
+# layer.
 class GetProjection(bpy.types.Operator):
     bl_idname = "get.projection"
     bl_label = "Get projection"
@@ -1192,6 +1226,29 @@ class EdgetoPolyLine(bpy.types.Operator):
             return {'CANCELLED'}
         else:
             return {'PASS_THROUGH'}
+
+
+# This function checks that the vert, edge or face is still there.
+# Unfortunately, the projection ids might be wrong if verts, edges
+# or faces have been deleted.
+def updateProjections(ob):
+    bm = bmesh.from_edit_mesh(ob.data)
+    bm.verts.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    remove_projections = []
+    for i, p in enumerate(ob.projections):
+        try:
+            if p.type == 'vert2surf':
+                bm.verts[p.id]
+            elif p.type == 'edge2surf':
+                bm.edges[p.id]
+            elif p.type == 'face2surf':
+                bm.faces[p.id]
+        except IndexError:
+            remove_projections.append(i)
+    for pid in reversed(sorted(remove_projections)):
+        ob.projections.remove(pid)
         
 # Boundary condition operators
 def selectActiveBoundary(self, context):

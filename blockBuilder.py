@@ -1,4 +1,10 @@
 import mathutils
+import time
+import importlib
+import numpy as np
+# from . import cycleFinderNumba
+# importlib.reload(cycleFinderNumba)
+
 def removedup(seq):
     checked = []
     for e in seq:
@@ -29,83 +35,78 @@ def findFace(faces, vl):
     return -1, []
 
 
-class cycleFinder:
+def cycleFinder(edges,verts):
 # Credit: Adam Gaither. An Efficient Block Detection Algorithm For Structured Grid Generation
-#
-    def __init__(self, edges, verts):
-        self.edges = edges
-        self.verticesId = verts
-        self.edgeVisited = [False for i in range(len(edges))]
-        self.currentCycle = []
-        self.currentCycleEdges = []
-        self.faces = []
-        self.facesEdges = []
-        self.facesId = []
-        self.no_edges = 0
-        self.v_in_edge = [[] for i in range(len(verts))]
-        for v in verts:
-            append = self.v_in_edge[v].append
-            for eid, e in enumerate(self.edges):
-                if v in e:
-                    append(eid)
+    verticesId = verts
+    edgeVisited = np.zeros(len(edges), dtype=bool)
+    faces = []
+    facesEdges = []
+    no_edges = 0
 
-    def buildAllFourEdgeFaces(self):
-        for v in self.verticesId:
-            self.currentCycle = []
-            self.currentCycleEdges = []
-            self.currentCycle.append(v)
-            self.buildFourEdgeFaces(v)
-            self.VisitAllEdgeAdjacent(v)
-        return self.faces,self.facesEdges
-
-    def buildFourEdgeFaces(self, v):
-        for eid in self.v_in_edge[v]:
-            if not self.edgeVisited[eid]:
-                e = self.edges[eid]
-                self.no_edges += 1
-                self.edgeVisited[eid] = True
-                opposite_v = e[0]
-                if opposite_v == v: # seems the other vertex is in e[1]!
-                    opposite_v = e[1]
-                self.currentCycle.append(opposite_v)
-                self.currentCycleEdges.append(eid)
-                if self.currentCycle[0] == self.currentCycle[-1]: # First equals last -> we have a face
-                     if self.uniqueCycle():
-                         self.faces.append(self.currentCycle[0:-1])
-                         self.facesEdges.append(self.currentCycleEdges[:])
-                         self.facesId.append(self.currentCycle[0:-1])
-                         self.facesId[-1].sort()
-                else:
-                    if self.no_edges < 4:
-                        self.buildFourEdgeFaces(opposite_v)
-                self.no_edges -= 1
-                self.currentCycle.pop()
-                self.currentCycleEdges.pop()
-                self.edgeVisited[eid] = False
-
-    def uniqueCycle(self):
-        cF = self.currentCycle[0:-1]
-        cF.sort()
-        return not cF in self.facesId
-
-    def VisitAllEdgeAdjacent(self, v):
-        for eid, e in enumerate(self.edges):
+    v_in_edge = [[] for i in range(len(verts))]
+    for v in verts:
+        for eid, e in enumerate(edges):
             if v in e:
-                self.edgeVisited[eid]
+                v_in_edge[v].append(eid)
+    v_in_edges = np.array(v_in_edge)
+
+    for v in verticesId:
+        currentCycle = [v]
+        currentCycleEdges = []
+        buildFourEdgeFaces(v, v_in_edge, edgeVisited, edges, no_edges, currentCycle, currentCycleEdges, faces, facesEdges)
+
+    faces = np.reshape(faces,(-1,4))
+    temp, u = np.unique(np.sort(faces), axis=0, return_index=True)
+    faces = faces[u]
+    facesP = [list(map(np.asscalar,f)) for f in faces]
+
+    facesEdges = np.reshape(facesEdges,(-1,4))
+    facesEdges = facesEdges[u]
+    facesEdgesP = [list(map(np.asscalar,f)) for f in facesEdges]
+
+    return facesP, facesEdgesP
+
+def buildFourEdgeFaces(v, v_in_edge, edgeVisited, edges, no_edges, currentCycle, currentCycleEdges, faces, facesEdges):
+    for eid in v_in_edge[v]:
+        if not edgeVisited[eid]:
+            e = edges[eid]
+            no_edges += 1
+            edgeVisited[eid] = True
+            opposite_v = e[0]
+            if opposite_v == v: # seems the other vertex is in e[1]!
+                opposite_v = e[1]
+            currentCycle.append(opposite_v)
+            currentCycleEdges.append(eid)
+            if currentCycle[0] == currentCycle[-1]: # First equals last -> we have a face
+                if len(currentCycle) == 5:
+                    faces.extend(currentCycle[0:4])
+                if len(currentCycleEdges) == 4:
+                    facesEdges.extend(currentCycleEdges[0:4])
+            else:
+                if no_edges < 4:
+                    buildFourEdgeFaces(opposite_v, v_in_edge, edgeVisited, edges, no_edges, currentCycle, currentCycleEdges, faces, facesEdges)
+            no_edges -= 1
+            currentCycle.pop()
+            currentCycleEdges.pop()
+            edgeVisited[eid] = False
 
 
-def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disabled = []):
+def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disabled = [], numba=False):
     if len(logFileName) > 0:
         logFile = open(logFileName,'w')
     else:
         logFile = ''
 
     # Use the cycle finder class to find all edges forming quad faces
-    cycFindFaces = cycleFinder(edges,range(len(vertices_coord)))
+    if numba:
+        from . import cycleFinderNumba
+        tmp_v,tmp_e = cycleFinderNumba.cycleFinder(edges,range(len(vertices_coord)))
+    else:
+        tmp_v,tmp_e = cycleFinder(edges,range(len(vertices_coord)))
+
     faces_as_list_of_vertices = []
     faces_as_list_of_nodes = []
     faces_as_list_of_edges = []
-    tmp_v,tmp_e = cycFindFaces.buildAllFourEdgeFaces()
     for ii, i in enumerate(tmp_v): # get rid of possible triangles
         if len(i) == 4:
             faces_as_list_of_vertices.append([vertices_coord[i[0]], vertices_coord[i[1]], vertices_coord[i[2]], vertices_coord[i[3]]])
@@ -145,11 +146,15 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
                     if not [min(fid1,fid2),max(fid1,fid2)] in connections_between_faces:
                         connections_between_faces.append([min(fid1,fid2),max(fid1,fid2)])
 
-    # Use these connections to find cycles of connected faces; called faceLoops
-    cycFindFaceLoops = cycleFinder(connections_between_faces,range(len(faces_as_list_of_vertices)))
-
     #this is the most time consuming step
-    faceLoops_as_list_of_faces, faceLoops_as_list_of_connections = cycFindFaceLoops.buildAllFourEdgeFaces()
+    # Use these connections to find cycles of connected faces; called faceLoops
+    if numba:
+        faceLoops_as_list_of_faces, faceLoops_as_list_of_connections = cycleFinderNumba.cycleFinder(connections_between_faces,range(len(faces_as_list_of_vertices)))
+    else:
+        faceLoops_as_list_of_faces, faceLoops_as_list_of_connections = cycleFinder(connections_between_faces,range(len(faces_as_list_of_vertices)))
+    # faceLoops_as_list_of_faces, faceLoops_as_list_of_connections = blockBuilder2.cycleFinder(connections_between_faces,range(len(faces_as_list_of_vertices)))
+
+
     # Dig out block structures from these face loops
     block_as_faceLoop = []
     for qf in faceLoops_as_list_of_faces:
@@ -317,10 +322,13 @@ def blockFinder(edges, vertices_coord, logFileName='', debugFileName='', disable
                 if bid in face_info[f]['neg']:
                     ind = face_info[f]['neg'].index(bid)
                     face_info[f]['neg'].pop(ind)
+    # stime = time.time()
     #this is the second most time consuming step
     still_coupling = True
     while still_coupling:
         still_coupling = couple_edges(dependent_edges)
+    # blockBuilder2.couple_edges(dependent_edges)
+    # print('still coupling, t',time.time() - stime)
 
     for es, edgeSet in enumerate(dependent_edges): # remove duplicates in lists
         dependent_edges[es] = removedup(edgeSet)
