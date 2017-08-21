@@ -115,7 +115,7 @@ class SwiftBlockPanel(bpy.types.Panel):
             box = self.layout.box()
             box.label('Boundary conditions')
             row = box.row()
-            row.template_list("boundary_items", "", ob.data, "materials", ob, "active_material_index", rows=2)
+            row.template_list("boundary_items", "", ob.data, "materials", ob, "boundary_index", rows=2)
             col = row.column(align=True)
             col.operator("boundaries.action", icon='ZOOMIN', text="").action = 'ADD'
             col.operator("boundaries.action", icon='ZOOMOUT', text="").action = 'REMOVE'
@@ -178,14 +178,20 @@ def initSwiftBlockProperties():
                  ('symmetry', 'symmetry', 'Defines the patch as symmetry'),
                  ],
         name = "Patch type")
+
     bpy.types.Object.patchName = bpy.props.StringProperty(
         name = "Patch name",
         description = "Specify name of patch",
         default = "defaultName")
 
-    bpy.types.Object.boundaries = \
-        bpy.props.CollectionProperty(type=BoundaryProperty)
     bpy.types.Object.boundary_index = bpy.props.IntProperty(update=selectActiveBoundary)
+    bpy.types.Material.boundary_type = bpy.props.EnumProperty(
+        items = [('wall', 'wall',''),
+             ('patch', 'patch',''),
+             ('empty', 'empty',''),
+             ('symmetry', 'symmetry',''),
+             ],
+        name = "Patch type")
 
 # Edge group properties
     bpy.types.Object.edge_groups = \
@@ -215,14 +221,10 @@ class boundary_items(bpy.types.UIList):
         ob = context.active_object
         me = data
         mat = me.materials[index]
-        for b in ob.boundaries:
-            if index == b.id:
-                boundary = b
-                break
         split = layout.split(percentage=0.2)
         split.prop(item, "diffuse_color", '')
         split.prop(item, "name", '', emboss = False)
-        split.prop(b, "type", '', emboss = False)
+        split.prop(item, "boundary_type", '', emboss = False)
 
 class boundaries_action(bpy.types.Operator):
     bl_idname = "boundaries.action"
@@ -242,9 +244,6 @@ class boundaries_action(bpy.types.Operator):
         bm = bmesh.from_edit_mesh(ob.data)
 
         if self.action == 'REMOVE':
-            for i, b in enumerate(ob.boundaries):
-                if b.name == ob.active_material.name:
-                    ob.boundaries.remove(i)
             mat_name = ob.active_material.name
             ob.data.materials.pop(ob.active_material_index)
             if not bpy.data.materials[mat_name].users:
@@ -253,7 +252,7 @@ class boundaries_action(bpy.types.Operator):
         elif self.action == 'ASSIGN':
             for f in bm.faces:
                 if f.select:
-                    f.material_index = ob.active_material_index
+                    f.material_index = ob.boundary_index
             ob.data.update()
 
         if self.action == 'ADD':
@@ -262,18 +261,13 @@ class boundaries_action(bpy.types.Operator):
             color = patchColor(len(ob.data.materials))
             mat.diffuse_color = color
             ob.data.materials.append(mat)
-            ob.active_material_index = len(ob.data.materials) - 1
+            material_index = len(ob.data.materials) - 1
 
             for f in bm.faces:
                 if f.select:
-                    f.material_index = ob.active_material_index
-            b = ob.boundaries.add()
-            b.oldName = mat.name
-            b.name = mat.name 
-            b.type = 'patch'
-            b.color = color
-            b.id = ob.active_material_index
-            ob.boundary_index = len(ob.boundaries)-1
+                    f.material_index = material_index
+            ob.boundary_index = material_index
+            ob.active_material_index = material_index
             ob.data.update()
 
         return {"FINISHED"}
@@ -332,20 +326,6 @@ def updateBoundaryName(self, context):
     mat.name = self.name
     self.oldName = mat.name
 
-class BoundaryProperty(bpy.types.PropertyGroup):
-    type = bpy.props.EnumProperty(
-        items = [('wall', 'wall',''),
-             ('patch', 'patch',''),
-             ('empty', 'empty',''),
-             ('symmetry', 'symmetry',''),
-             ],
-        name = "Patch type")
-    oldName = bpy.props.StringProperty()
-    name = bpy.props.StringProperty(update=updateBoundaryName)
-    color = bpy.props.FloatVectorProperty(subtype = 'COLOR', update=updateBoundaryColor)
-    id = bpy.props.IntProperty()
-bpy.utils.register_class(BoundaryProperty)
-
 class EdgeGroupProperty(bpy.types.PropertyGroup):
     group_name = bpy.props.StringProperty()
     group_edges = bpy.props.StringProperty()
@@ -391,7 +371,7 @@ class InitBlockingObject(bpy.types.Operator):
         return {"FINISHED"}
 
 # Blocking and previewing operators
-# Automatically find blocking for the object and view it.
+# Automatical block detection.
 class BuildBlocking(bpy.types.Operator):
     bl_idname = "build.blocking"
     bl_label = "Build blocking"
@@ -584,10 +564,7 @@ def writeMesh(ob, folder = ''):
 
     selected_edges = [e.select for e in ob.data.edges]
 
-    boundaryTypes = dict()
-    for b in ob.boundaries:
-        boundaryTypes[b.id] = b.type
-    boundaries = [{'name':mat.name, 'type':boundaryTypes[i], 'faceVerts':[]} for i, mat in enumerate(ob.data.materials)]
+    boundaries = [{'name':mat.name, 'type':mat.boundary_type, 'faceVerts':[]} for mat in ob.data.materials]
     for f in bm.faces:
         if f[enabledl] == 1:
             boundaries[f.material_index]['faceVerts'].append([v.index for v in f.verts])
@@ -1253,12 +1230,13 @@ def updateProjections(ob):
 # Boundary condition operators
 def selectActiveBoundary(self, context):
     ob = context.active_object
+    ob.active_material_index = ob.boundary_index
+
     bm = bmesh.from_edit_mesh(ob.data)
-    boundary = ob.boundaries[ob.boundary_index]
-    material_id = ob.data.materials.find(boundary.name)
     bpy.ops.mesh.select_all(action='DESELECT')
+
     for f in bm.faces:
-        if f.material_index == material_id:
+        if f.material_index == ob.boundary_index:
             f.select = True
 
 
@@ -1266,83 +1244,7 @@ def patchColor(patch_no):
     color = [(0.25,0.25,0.25), (1.0,0.,0.), (0.0,1.,0.),(0.0,0.,1.),(0.707,0.707,0),(0,0.707,0.707),(0.707,0,0.707)]
     return color[patch_no % len(color)]
 
-class OBJECT_OT_SetPatchName(bpy.types.Operator):
-    '''Set the given name to the selected faces'''
-    bl_idname = "set.patchname"
-    bl_label = "Set name"
 
-    def execute(self, context):
-        scn = context.scene
-        ob = context.active_object
-        bm = bmesh.from_edit_mesh(ob.data)
-        boundaryl = bm.faces.layers.string.get('boundary')
-        b = ob.boundaries.add()
-        b.name = ob.patchName
-        b.type = ob.bcTypeEnum
-        for f in bm.faces:
-            if f.select:
-                f[boundaryl] = b.name.encode()
-        b.color = patchColor(len(ob.boundaries))
-
-        bpy.ops.object.mode_set(mode='OBJECT')
-        NoSelected = 0
-        for f in ob.data.polygons:
-            if f.select:
-                NoSelected += 1
-        if NoSelected:
-            namestr = ob.patchName
-            namestr = namestr.strip()
-            namestr = namestr.replace(' ', '_')
-            try:
-                mat = bpy.data.materials[namestr]
-                patchindex = list(ob.data.materials).index(mat)
-                ob.active_material_index = patchindex
-            except: # add a new patchname (as a blender material, as such face props are conserved during mesh mods)
-                mat = bpy.data.materials.new(namestr)
-                mat.diffuse_color = patchColor(len(ob.data.materials))
-                bpy.ops.object.material_slot_add()
-                ob.material_slots[-1].material = mat
-            mat['patchtype'] = ob.bcTypeEnum
-            bpy.ops.object.editmode_toggle()
-            bpy.ops.object.material_slot_assign()
-        else:
-            self.report({'INFO'}, "No faces selected!")
-            return{'CANCELLED'}
-        return {'FINISHED'}
-
-class OBJECT_OT_GetPatch(bpy.types.Operator):
-    '''Click to select faces belonging to this patch'''
-    bl_idname = "set.getpatch"
-    bl_label = "Get patch"
-
-    whichPatch = bpy.props.StringProperty()
-    shiftDown = False
-
-    def invoke(self, context, event):
-        if event.shift:
-            self.shiftDown = True
-        else:
-            self.shiftDown = False
-        self.execute(context)
-        return {'FINISHED'}
-
-    def execute(self, context):
-        scn = context.scene
-        ob = context.active_object
-        bpy.ops.object.mode_set(mode='OBJECT')
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(False,False,True)")
-        if not self.shiftDown:
-            bpy.ops.mesh.select_all(action='DESELECT')
-        bpy.ops.object.mode_set(mode='OBJECT')
-        mat = bpy.data.materials[self.whichPatch]
-        patchindex = list(ob.data.materials).index(mat)
-        ob.active_material_index = patchindex
-        bpy.ops.object.mode_set(mode='EDIT')
-        bpy.ops.object.material_slot_select()
-        ob.bcTypeEnum = mat['patchtype']
-        ob.patchName = self.whichPatch
-        return {'FINISHED'}
 
 # Edge group operators
 class RemoveEdgeGroup(bpy.types.Operator):
@@ -1515,6 +1417,7 @@ class DrawEdgeDirections(bpy.types.Operator):
     def remove(self, context, ob):
         context.scene.objects.unlink(ob)
         bpy.data.objects.remove(ob)
+
 def showInternalFaces(self, context):
     ob = context.active_object
     hideFacesEdges(ob, ob.ShowInternalFaces)
