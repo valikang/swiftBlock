@@ -16,3 +16,15 @@ Blender addon for creating blockMeshDict files for OpenFOAM's blockMesh applicat
 * Show/hide internal faces to make projections on them
 * The automatic snapping algorithm can also be selected
 * Extrude blocks operator which preserves internal edges and faces (ALT+E opens the extrude menu)
+
+## How to install Blender, numpy and SwiftBlock on Ubuntu
+```bash
+sudo apt install blender
+sudo apt install python3-pip
+pip install numpy
+mkdir -p $HOME/.config/blender/2.xx/scripts/addons
+cd $HOME/.config/blender/2.xx/scripts/addons
+git clone https://github.com/flowkersma/swiftBlock/
+```
+Replace 2.xx with your Blender version. Load your OpenFOAM environment and launch Blender. In Blender open the preferences (File->User Preferences). Click on addons tab, search for SwiftBlock and enable it. 
+Happy meshing!
