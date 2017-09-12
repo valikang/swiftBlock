@@ -94,8 +94,8 @@ class SwiftBlockPanel(bpy.types.Panel):
             box.label("Projections")
             split = box.split()
             split.prop(ob, "ProjectionObject","",icon = "OUTLINER_OB_SURFACE")
-            split.operator("add.projections", text="Add projections")
-            box.operator("remove.projections", text="Remove projections")
+            split.operator("add.projections", text="Add")
+            split.operator("remove.projections", text="Remove")
             if ob.Mesher == "blockMeshBodyFit":
                 box.prop(ob, 'SearchLength')
             box.template_list("projection_items", "", ob, "projections", ob, "projection_index", rows=2)
