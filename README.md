@@ -22,7 +22,7 @@ Blender addon for creating blockMeshDict files for OpenFOAM's blockMesh applicat
 ```bash
 sudo apt install blender
 sudo apt install python3-pip
-pip install numpy
+pip3 install numpy
 mkdir -p $HOME/.config/blender/2.xx/scripts/addons
 cd $HOME/.config/blender/2.xx/scripts/addons
 git clone https://github.com/flowkersma/swiftBlock/
