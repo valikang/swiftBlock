@@ -1,5 +1,5 @@
 bl_info = {
-    "name": "SwiftBlock,Mikko plus bl",
+    "name": "SwiftBlock,Mikko with global variable toolbox",
     "author": "Karl-Johan Nogenmyr, Mikko Folkersma, Turo Valikangas",
     "version": (0, 2),
     "blender": (2, 7, 7),
@@ -58,9 +58,9 @@ def createLine(lineName, pointList, thickness,length,blType):
     
     # setup a material
     lmat = bpy.data.materials.new('Linematerial')
-    if blType == "bl1":
+    if blType == "g1":
         lmat.diffuse_color = (0.0,0.0,1.0)
-    if blType == "bl2":
+    if blType == "g2":
         lmat.diffuse_color = (1.0,0.0,0.0)
     lmat.use_shadeless = True
     theLine.data.materials.append(lmat)
@@ -119,7 +119,7 @@ class SwiftBlockPanel(bpy.types.Panel):
                 col.prop(ob, "x1")
                 col.prop(ob, "r1")
                 #Turo added
-                col.prop(ob, "bl1")
+                col.prop(ob, "g1")
                 #Turo added ends
                 col = split.column()
                 col.label("End")
@@ -127,7 +127,7 @@ class SwiftBlockPanel(bpy.types.Panel):
                 col.prop(ob, "r2")
                 
                 #Turo added
-                col.prop(ob, "bl2")
+                col.prop(ob, "g2")
                 #Turo added ends                
 
 
@@ -147,7 +147,7 @@ class SwiftBlockPanel(bpy.types.Panel):
             #Turo added
             box = self.layout.box()
             #box = box.column()
-            box.label("Global variables")
+            box.label("Global variables (not if bl=3)")
 
             box.prop(ob,'setGlobalCellMax')
             if ob.setGlobalCellMax:
@@ -155,20 +155,20 @@ class SwiftBlockPanel(bpy.types.Panel):
                 box = box.column()
                 box.operator('set.globalcell')
 
-            box.prop(ob,'setBoundaryLayer')
-            if ob.setBoundaryLayer:
-                box.prop(ob,'blx1')
-                box.prop(ob,'blr1')
-                box.prop(ob,'blx2')
-                box.prop(ob,'blr2')
+            box.prop(ob,'setGlobalGroups')
+            if ob.setGlobalGroups:
+                box.prop(ob,'gx1')
+                box.prop(ob,'gr1')
+                box.prop(ob,'gx2')
+                box.prop(ob,'gr2')
                 box = box.column()
-                box.operator('set.boundarylayer')
-                box.prop(ob,'setInitBL')
-                if ob.setInitBL:
-                    box.operator('init.boundarylayer')
-                box.prop(ob,'DeleteBL')
-                if ob.DeleteBL:
-                    box.operator('del.bl')
+                box.operator('set.globalgroups')
+                box.prop(ob,'initGlobal')
+                if ob.initGlobal:
+                    box.operator('init.globalgroups')
+                box.prop(ob,'delGlobalFlags')
+                if ob.delGlobalFlags:
+                    box.operator('del.globalflags')
              #Turo added ends
                     
             box = self.layout.box()
@@ -253,24 +253,24 @@ def initSwiftBlockProperties():
 
     #Turo added
 #Global boundary layer properties
-    bpy.types.Object.setGlobalCellMax = bpy.props.BoolProperty(name="setGlobalCellMax",
+    bpy.types.Object.setGlobalCellMax = bpy.props.BoolProperty(name="Set globall cell rules?",
             description = "Do you want to set a global maximum cell number?")
-    bpy.types.Object.setBoundaryLayer = bpy.props.BoolProperty(name="setBoundaryLayer",
-            description = "Do you want to set dx and exp for all boundary layer edges?")
-    bpy.types.Object.setInitBL = bpy.props.BoolProperty(name="setInitBL",
+    bpy.types.Object.setGlobalGroups = bpy.props.BoolProperty(name="Set global x and r rules?",
+            description = "Do you want to set x and r for all edges?")
+    bpy.types.Object.initGlobal = bpy.props.BoolProperty(name="Initialize global groups",
             description = "If boundary layers give you an error, try to initialize them?")
-    bpy.types.Object.DeleteBL = bpy.props.BoolProperty(name="DeleteBL",
+    bpy.types.Object.delGlobalFlags = bpy.props.BoolProperty(name="Delete global group flags",
             description = "If you want to hide all the boundary layer flags press this.")
 
     
     
-    bpy.types.Object.bl1 = bpy.props.FloatProperty(name="bl1", default=0, description="Level 1 bondary layer group", min=0)
-    bpy.types.Object.bl2 = bpy.props.FloatProperty(name="bl2", default=0, description="Level 2 bondary layer group", min=0)
-    bpy.types.Object.globalCellMax = bpy.props.FloatProperty(name="globalCellMax", default=0, description="Global maximum cell number", min=1e-6)
-    bpy.types.Object.blx1 = bpy.props.FloatProperty(name="blx1", default=0, description="Global boundary layer cell size at start of the edge", min=1e-6)
-    bpy.types.Object.blx2 = bpy.props.FloatProperty(name="blx2", default=0, description="Global boundary layer cell size at end of the edge", min=1e-6)
-    bpy.types.Object.blr1 = bpy.props.FloatProperty(name="blr1", default=0, description="Global boundary layer expansion ratio at start of edge.", min=1e-6)
-    bpy.types.Object.blr2 = bpy.props.FloatProperty(name="blr2", default=0, description="Global boundary layer expansion ratio at end of edge.", min=1e-6)
+    bpy.types.Object.g1 = bpy.props.IntProperty(name="g1", default=0, description="Level 1 bondary layer group", min=0)
+    bpy.types.Object.g2 = bpy.props.IntProperty(name="g2", default=0, description="Level 2 bondary layer group", min=0)
+    bpy.types.Object.globalCellMax = bpy.props.FloatProperty(name="Global cell count", default=0, description="Global cell count", min=1e-6)
+    bpy.types.Object.gx1 = bpy.props.FloatProperty(name="Global x1", default=0, description="Global first layer cell size where bl=1", min=1e-6)
+    bpy.types.Object.gx2 = bpy.props.FloatProperty(name="Global x2", default=0, description="Global first layer cell size where bl=2", min=1e-6)
+    bpy.types.Object.gr1 = bpy.props.FloatProperty(name="Global r1", default=0, description="Global expansion ratio where bl=1", min=1e-6)
+    bpy.types.Object.gr2 = bpy.props.FloatProperty(name="Global r2", default=0, description="Global expansion ratio where bl=2", min=1e-6)
 
     #Turo added ends
     
@@ -379,24 +379,24 @@ class boundaries_action(bpy.types.Operator):
 
 #Turo added objects
 
-class initBL(bpy.types.Operator):
+class initGlobalGroups(bpy.types.Operator):
     '''Initialises boundary layer flags'''
-    bl_idname = "init.boundarylayer"
-    bl_label = "Initialise boundary layer flags"
+    bl_idname = "init.globalgroups"
+    bl_label = "Initialise global group system"
     def execute(self, context):
         bpy.ops.object.mode_set(mode='EDIT')
         ob = bpy.context.active_object
         bm = bmesh.from_edit_mesh(ob.data)
 
-        bm.edges.layers.int.new("bl1")
-        bm.edges.layers.int.new("bl2")
+        bm.edges.layers.int.new("g1")
+        bm.edges.layers.int.new("g2")
         return{'FINISHED'}
 
 
-class setBoundaryLayer(bpy.types.Operator):
-    '''Sets cell size in y direction in boundary layer edges'''
-    bl_idname = "set.boundarylayer"
-    bl_label = "Set all boundary layers"
+class setGlobalGroups(bpy.types.Operator):
+    '''Sets cell x and r for global groups 1 and 2'''
+    bl_idname = "set.globalgroups"
+    bl_label = "Set all global groups"
     bl_options = {"UNDO"}
 
     def execute(self,context):
@@ -413,8 +413,8 @@ class setBoundaryLayer(bpy.types.Operator):
         r1l = bm.edges.layers.float.get('r1')
         r2l = bm.edges.layers.float.get('r2')
         #maxdxl = bm.edges.layers.float.get('maxdx')
-        bl1l = bm.edges.layers.int.get('bl1')
-        bl2l = bm.edges.layers.int.get('bl2')
+        g1l = bm.edges.layers.int.get('g1')
+        g2l = bm.edges.layers.int.get('g2')
 
         cellsl = bm.edges.layers.int.get('cells')
         groupl = bm.edges.layers.int.get('groupid')
@@ -446,32 +446,32 @@ class setBoundaryLayer(bpy.types.Operator):
         
 
         for e in bm.edges:
-            if e[bl1l] == 0:
+            if e[g1l] == 0:
                 e[x1l] = 0.0;
                 e[r1l] = 1.0;
-            if e[bl1l] == 1:
-                e[x1l] = ob.blx1
-                e[r1l] = ob.blr1
+            if e[g1l] == 1:
+                e[x1l] = ob.gx1
+                e[r1l] = ob.gr1
                 inboundline = [e.verts[1].co[:], e.verts[0].co[:]]
-                createLine('bl', inboundline, ob.blr1,ob.blx1,'bl1')
-            if e[bl1l] == 2:
-                e[x1l] = ob.blx2
-                e[r1l] = ob.blr2
+                createLine('bl', inboundline, ob.gr1,ob.gx1,'g1')
+            if e[g1l] == 2:
+                e[x1l] = ob.gx2
+                e[r1l] = ob.gr2
                 inboundline = [e.verts[1].co[:], e.verts[0].co[:]]
-                createLine('bl', inboundline, ob.blr2,ob.blx2,'bl2')
-            if e[bl2l] == 0:
+                createLine('bl', inboundline, ob.gr2,ob.gx2,'g2')
+            if e[g2l] == 0:
                 e[x2l] = 0.0;
                 e[r2l] = 1.0;
-            if e[bl2l] ==1:
-                e[x2l] = ob.blx1
-                e[r2l] = ob.blr1
+            if e[g2l] ==1:
+                e[x2l] = ob.gx1
+                e[r2l] = ob.gr1
                 inboundline = [e.verts[0].co[:], e.verts[1].co[:]]
-                createLine('bl', inboundline, ob.blr1,ob.blx1,'bl1')  
-            if e[bl2l] == 2:
-                e[x2l] = ob.blx2
-                e[r2l] = ob.blr2
+                createLine('bl', inboundline, ob.gr1,ob.gx1,'g1')  
+            if e[g2l] == 2:
+                e[x2l] = ob.gx2
+                e[r2l] = ob.gr2
                 inboundline = [e.verts[0].co[:], e.verts[1].co[:]]
-                createLine('bl', inboundline, ob.blr2,ob.blx2,'bl2')
+                createLine('bl', inboundline, ob.gr2,ob.gx2,'g2')
             
             
             # blender float cannot store very big floats
@@ -497,8 +497,8 @@ class globalCellMaxSetter(bpy.types.Operator):
         bpy.ops.object.mode_set(mode='EDIT')
         bm = bmesh.from_edit_mesh(ob.data)
       
-        bl1l = bm.edges.layers.int.get('bl1')
-        bl2l = bm.edges.layers.int.get('bl2')
+        g1l = bm.edges.layers.int.get('g1')
+        g2l = bm.edges.layers.int.get('g2')
        
         cellsl = bm.edges.layers.int.get('cells')
 
@@ -508,7 +508,7 @@ class globalCellMaxSetter(bpy.types.Operator):
 
         anyselected = False
         for e in bm.edges:      
-            if e[bl1l] != 3 and e[bl2l] != 3:
+            if e[g1l] != 3 and e[g2l] != 3:
                 e[cellsl] = ob.globalCellMax
                 
             
@@ -527,10 +527,10 @@ class globalCellMaxSetter(bpy.types.Operator):
 
 
     
-class deleteBoundaryLayer(bpy.types.Operator):
+class deleteGlobalFlags(bpy.types.Operator):
     '''Delete boundary layer flags'''
-    bl_idname = "del.bl"
-    bl_label = "Delete boundary layer flags"
+    bl_idname = "del.globalflags"
+    bl_label = "Delete global group flags"
 
     def execute(self, context):
         scn = context.scene
@@ -639,12 +639,12 @@ class InitBlockingObject(bpy.types.Operator):
         bm.edges.layers.int.new("groupid")
         bm.edges.layers.int.new("modtime")
         #Turo added
-        bm.edges.layers.int.new("bl1")
-        bm.edges.layers.int.new("bl2")
-        bm.edges.layers.int.new("blx1")
-        bm.edges.layers.int.new("blx2")
-        bm.edges.layers.int.new("blr1")
-        bm.edges.layers.int.new("blr2")
+        bm.edges.layers.int.new("g1")
+        bm.edges.layers.int.new("g2")
+        bm.edges.layers.int.new("gx1")
+        bm.edges.layers.int.new("gx2")
+        bm.edges.layers.int.new("gr1")
+        bm.edges.layers.int.new("gr2")
         bm.edges.layers.int.new("globalCellMax")
 
 
@@ -1091,8 +1091,8 @@ class SetEdge(bpy.types.Operator):
         x1l = bm.edges.layers.float.get('x1')
         x2l = bm.edges.layers.float.get('x2')
         #Turo added
-        bl1l = bm.edges.layers.int.get('bl1')
-        bl2l = bm.edges.layers.int.get('bl2')
+        g1l = bm.edges.layers.int.get('g1')
+        g2l = bm.edges.layers.int.get('g2')
         #Turo added ends
         r1l = bm.edges.layers.float.get('r1')
         r2l = bm.edges.layers.float.get('r2')
@@ -1111,8 +1111,8 @@ class SetEdge(bpy.types.Operator):
                     e[r1l] = ob.r1
                     e[r2l] = ob.r2
                     #Turo added
-                    e[bl1l] = ob.bl1
-                    e[bl2l] = ob.bl2
+                    e[g1l] = ob.g1
+                    e[g2l] = ob.g2
                     #Turo added ends
                 elif ob.MappingType == "Geometric":
                     e[rl] = ob.Ratio
@@ -1134,8 +1134,8 @@ class GetEdge(bpy.types.Operator):
         x1l = bm.edges.layers.float.get('x1')
         x2l = bm.edges.layers.float.get('x2')
         #Turo added
-        bl1l = bm.edges.layers.int.get('bl1')
-        bl2l = bm.edges.layers.int.get('bl2')
+        g1l = bm.edges.layers.int.get('g1')
+        g2l = bm.edges.layers.int.get('g2')
         #Turo added ends
         r1l = bm.edges.layers.float.get('r1')
         r2l = bm.edges.layers.float.get('r2')
@@ -1148,8 +1148,8 @@ class GetEdge(bpy.types.Operator):
                  ob.x1 = e[x1l]
                  ob.x2 = e[x2l]
                  #Turo added
-                 ob.bl1 = e[bl1l] 
-                 ob.bl2 = e[bl2l]
+                 ob.g1 = e[g1l] 
+                 ob.g2 = e[g2l]
                  #Turo added ends
                  ob.r1 = e[r1l]
                  ob.r2 = e[r2l]
