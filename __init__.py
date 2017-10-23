@@ -277,7 +277,7 @@ def initSwiftBlockProperties():
 # Boundary condition properties
     bpy.types.Object.bcTypeEnum = bpy.props.EnumProperty(
         items = [('wall', 'wall', 'Defines the patch as wall'),
-                 ('patch', 'patch', 'Defines the patch as generic patch'),
+                 ('patch', 'patch', 'Defines the patch as generic patch'),toi uu
                  ('empty', 'empty', 'Defines the patch as empty'),
                  ('symmetry', 'symmetry', 'Defines the patch as symmetry'),
                  ('symmetryPlane', 'symmetryPlane', 'Defines the patch as symmetryPlane'),
