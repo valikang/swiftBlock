@@ -267,10 +267,10 @@ def initSwiftBlockProperties():
     bpy.types.Object.g1 = bpy.props.IntProperty(name="g1", default=0, description="Level 1 bondary layer group", min=0)
     bpy.types.Object.g2 = bpy.props.IntProperty(name="g2", default=0, description="Level 2 bondary layer group", min=0)
     bpy.types.Object.globalCellMax = bpy.props.FloatProperty(name="Global cell count", default=0, description="Global cell count", min=1e-6)
-    bpy.types.Object.gx1 = bpy.props.FloatProperty(name="Global x1", default=0, description="Global first layer cell size where bl=1", min=1e-6)
-    bpy.types.Object.gx2 = bpy.props.FloatProperty(name="Global x2", default=0, description="Global first layer cell size where bl=2", min=1e-6)
-    bpy.types.Object.gr1 = bpy.props.FloatProperty(name="Global r1", default=0, description="Global expansion ratio where bl=1", min=1e-6)
-    bpy.types.Object.gr2 = bpy.props.FloatProperty(name="Global r2", default=0, description="Global expansion ratio where bl=2", min=1e-6)
+    bpy.types.Object.gx1 = bpy.props.FloatProperty(name="Global x1", default=0, description="Global first layer cell size where g=1", min=1e-6)
+    bpy.types.Object.gx2 = bpy.props.FloatProperty(name="Global x2", default=0, description="Global first layer cell size where g=2", min=1e-6)
+    bpy.types.Object.gr1 = bpy.props.FloatProperty(name="Global r1", default=0, description="Global expansion ratio where g=1", min=1e-6)
+    bpy.types.Object.gr2 = bpy.props.FloatProperty(name="Global r2", default=0, description="Global expansion ratio where g=2", min=1e-6)
 
     #Turo added ends
     
@@ -280,6 +280,13 @@ def initSwiftBlockProperties():
                  ('patch', 'patch', 'Defines the patch as generic patch'),
                  ('empty', 'empty', 'Defines the patch as empty'),
                  ('symmetry', 'symmetry', 'Defines the patch as symmetry'),
+                 ('symmetryPlane', 'symmetryPlane', 'Defines the patch as symmetryPlane'),
+                 ('wedge', 'wedge', 'Defines the patch as wedge'),
+                 ('cyclic', 'cyclic' , 'Defines the patch as cyclic'),
+                 ('cyclicAMI', 'cyclicAMI' , 'Defines the patch as cyclicAMI'),
+                 ('cyclicGgi', 'cyclicGgi' , 'Defines the patch as cyclicGgi'),
+                 ('overlapGgi', 'overlapGgi' , 'Defines the patch as overlapGgi'),
+                 ('regionCouple', 'regionCouple', 'Defines the patch as regionCouple'),
                  ],
         name = "Patch type")
 
@@ -294,6 +301,13 @@ def initSwiftBlockProperties():
              ('patch', 'patch',''),
              ('empty', 'empty',''),
              ('symmetry', 'symmetry',''),
+             ('symmetryPlane', 'symmetryPlane', 'Defines the patch as symmetryPlane'),
+             ('wedge', 'wedge', 'Defines the patch as wedge'),
+             ('cyclic', 'cyclic' , 'Defines the patch as cyclic'),
+             ('cyclicAMI', 'cyclicAMI' , 'Defines the patch as cyclicAMI'),
+             ('cyclicGgi', 'cyclicGgi' , 'Defines the patch as cyclicGgi'),
+             ('overlapGgi', 'overlapGgi' , 'Defines the patch as overlapGgi'),
+             ('regionCouple', 'regionCouple', 'Defines the patch as regionCouple'),
              ],
         name = "Patch type")
 
@@ -489,7 +503,7 @@ class setGlobalGroups(bpy.types.Operator):
 class globalCellMaxSetter(bpy.types.Operator):
     '''Sets max cell size for all edge(s)'''
     bl_idname = "set.globalcell"
-    bl_label = "Set global Cell rules"
+    bl_label = "Set global cell count rules"
 
     def execute(self,context):
         scn = context.scene
