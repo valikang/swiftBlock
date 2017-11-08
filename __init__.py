@@ -1134,6 +1134,7 @@ class RemoveProjections(bpy.types.Operator):
         return {"FINISHED"}
 
 def writeProjectionObjects(ob, path, onlyFaces = False):
+    blender_version = bpy.app.version[1]
     objects = []
     for p in ob.projections:
         if onlyFaces and not p.type == 'face2surf':
@@ -1145,7 +1146,12 @@ def writeProjectionObjects(ob, path, onlyFaces = False):
         sob = bpy.data.objects[o]
         hide = sob.hide
         blender_utils.activateObject(sob)
-        bpy.ops.export_mesh.stl('EXEC_DEFAULT',filepath = path + '/{}.stl'.format(o))
+        # In older Blender versions < 2.76 only the selection is exported.
+        # In newer versions there is a new argument use_selection which is by default False.
+        if blender_version < 77:
+            bpy.ops.export_mesh.stl('EXEC_DEFAULT',filepath = path + '/{}.stl'.format(o))
+        else:
+            bpy.ops.export_mesh.stl('EXEC_DEFAULT',filepath = path + '/{}.stl'.format(o),use_selection=True)
         sob.hide = hide
     blender_utils.activateObject(ob)
     return objects
