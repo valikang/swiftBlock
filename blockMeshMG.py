@@ -9,7 +9,7 @@ from . import utils
 class PreviewMesh():
     def __init__(self, folder=None):
         if not shutil.which('blockMesh'):
-            raise RuntimeError('ERROR: No BlockMesh Found!')
+            raise RuntimeError('ERROR: Could not find blockMesh! Please source OpenFOAM in terminal and start Blender from that terminal so that BlockMeshMG finds blockMesh command.')
         else:
             self.blockMeshbin = 'blockMesh'
         if folder:

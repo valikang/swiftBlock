@@ -29,14 +29,14 @@ def vertices_from_mesh(ob):
 
     # get the modifiers
     try:
-        mesh = ob.to_mesh(bpy.context.scene, False, "PREVIEW")
+        mesh = ob.to_mesh(bpy.context.depsgraph, False)
     except RuntimeError:
         raise StopIteration
 
     matrix = ob.matrix_world.copy()
 
     for v in mesh.vertices:
-        yield (matrix*v.co)
+        yield (matrix @ v.co)
 
     bpy.data.meshes.remove(mesh)
 
@@ -46,7 +46,7 @@ def edges_from_mesh(ob):
 
     # get the modifiers
     try:
-        mesh = ob.to_mesh(bpy.context.scene, False, "PREVIEW")
+        mesh = ob.to_mesh(bpy.context.depsgraph, False)
     except RuntimeError:
         raise StopIteration
 
@@ -60,40 +60,42 @@ def activateObject(ob, hideCurrent = False):
     bpy.ops.object.mode_set(mode='OBJECT')
     cob = context.active_object
     if cob:
-        cob.hide = hideCurrent
-        cob.select = False
+        cob.hide_set(hideCurrent)
+        cob.select_set(False)
     scn = context.scene
-    ob.select = True
-    ob.hide = False
-    bpy.context.scene.objects.active = ob
+    ob.select_set(True)
+    ob.hide_set(False)
+    bpy.context.view_layer.objects.active = ob
     bpy.ops.object.mode_set(mode='EDIT')
 
 
 def previewMesh(ob, points, faces):
     blocking = ob
-    blocking.hide = True
-    blocking.select = False
+    blocking.hide_set(True)
+    blocking.select_set(False)
     scn = bpy.context.scene
-    if not ob.preview_object or not ob.preview_object in bpy.data.objects:
+    if not ob.swiftBlock_preview_object or \
+       not ob.swiftBlock_preview_object in bpy.data.objects:
         mesh_data = bpy.data.meshes.new("previewMesh")
         previewMeshOb = bpy.data.objects.new('previewMesh', mesh_data)
-        previewMeshOb.ispreviewObject = True
-        scn.objects.link(previewMeshOb)
-        ob.preview_object = previewMeshOb.name
+        previewMeshOb.swiftBlock_ispreviewObject = True
+        bpy.context.collection.objects.link(previewMeshOb)
+        ob.swiftBlock_preview_object = previewMeshOb.name
     else:
         previewMeshOb = bpy.data.objects["previewMesh"]
         oldme = previewMeshOb.data
         mesh_data = bpy.data.meshes.new("previewMesh")
         previewMeshOb.data = mesh_data
         bpy.data.meshes.remove(oldme)
-    previewMeshOb.hide = False
-    previewMeshOb.select = True
-    previewMeshOb.blocking_object = blocking.name
+    previewMeshOb.hide_set(False)
+    previewMeshOb.select_set(True)
+    previewMeshOb.swiftBlock_blocking_object = blocking.name
     mesh_data.from_pydata(points, [], faces)
     mesh_data.update()
 
-    scn.objects.active = previewMeshOb
-    bpy.context.object.data.show_extra_edge_length = True
+    bpy.context.view_layer.objects.active = previewMeshOb
+    # FIXME: show_extra_edge_length is now Overlay property, find out how to do this.
+    #bpy.context.object.data.show_extra_edge_length = True
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='DESELECT')
@@ -159,24 +161,3 @@ def draw_edge_direction(self,context):
     bgl.glDisable(bgl.GL_BLEND)
     bgl.glColor4f(0.0,0.0,0.0,1.0)
 
-class EdgeVisualiser(bpy.types.Operator):
-    bl_idname = "edge.visualiser"
-    bl_label = "Edge Visualiser"
-    bl_description = "Show edge directions"
-
-    def modal(self, context, event):
-        context.area.tag_redraw()
-        if event.type == 'ESC':
-            bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
-            return {"CANCELLED"}
-        return {"PASS_THROUGH"}
-
-    def invoke(self, context, event):
-        args = (self, context)
-        if context.area.type == "VIEW_3D":
-            self._handle = bpy.types.SpaceView3D.draw_handler_add(draw_edge_direction, args, 'WINDOW', 'POST_VIEW')
-            context.window_manager.modal_handler_add(self)
-            return {"RUNNING_MODAL"}
-        else:
-            self.report({"WARNING"}, "View3D not found, can't run operator")
-            return {"CANCELLED"}
