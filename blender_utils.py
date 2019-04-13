@@ -56,13 +56,11 @@ def edges_from_mesh(ob):
     bpy.data.meshes.remove(mesh)
 
 def activateObject(ob, hideCurrent = False):
-    context = bpy.context
     bpy.ops.object.mode_set(mode='OBJECT')
-    cob = context.active_object
+    cob = bpy.context.active_object
     if cob:
         cob.hide_set(hideCurrent)
         cob.select_set(False)
-    scn = context.scene
     ob.select_set(True)
     ob.hide_set(False)
     bpy.context.view_layer.objects.active = ob

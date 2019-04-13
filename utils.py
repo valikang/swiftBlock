@@ -295,14 +295,14 @@ def obFromStructuredMesh(verts, dim, objName):
     vol_me.update()
 
     ob = bpy.data.objects.new(objName,vol_me)
-    context.scene.objects.link(ob)
+    bpy.context.collection.objects.link(ob)
     boundary_obs = []
     for i, bm in enumerate(boundary_mes):
         boundary_ob = bpy.data.objects.new(objName+ '_{}'.format(i), bm)
         boundary_ob.parent = ob
         # boundary_ob.show_all_edges = True
         # boundary_ob.show_wire = True
-        context.scene.objects.link(boundary_ob)
+        bpy.context.collection.objects.link(boundary_ob)
         boundary_obs.append(boundary_ob)
     return ob
 
@@ -525,7 +525,7 @@ def hideFacesEdges(ob, showInternal = False):
             if (not ob.swiftBlock_blocks[f[posl]].enabled and ob.swiftBlock_blocks[f[negl]].enabled) \
                     or (ob.swiftBlock_blocks[f[posl]].enabled and not ob.swiftBlock_blocks[f[negl]].enabled):
                 # boundary face
-                f.hide_set(False)# = False
+                f.hide = False # = False
                 f[enabledl] = 1
             elif not ob.swiftBlock_blocks[f[posl]].enabled and not ob.swiftBlock_blocks[f[negl]].enabled:
                 # both blocks disabled
@@ -534,7 +534,7 @@ def hideFacesEdges(ob, showInternal = False):
             elif showInternal:
                 # internal face
                 f[enabledl] = 2
-                f.hide_set(False)
+                f.hide = False
             else:
                 # internal face
                 f[enabledl] = 2
@@ -542,20 +542,20 @@ def hideFacesEdges(ob, showInternal = False):
         elif (f[posl] == -1 and f[negl] != -1): #boundary face
             if ob.swiftBlock_blocks[f[negl]].enabled:
                 # boundary face
-                f.hide_set(False)# = False
+                f.hide = False # = False
                 f[enabledl] = 1
             else:
                 # boundary block disabled
-                f.hide_set(True)
+                f.hide = True
                 f[enabledl] = False
         elif (f[posl] != -1 and f[negl] == -1): #boundary face
             if ob.swiftBlock_blocks[f[posl]].enabled:
                 # boundary face
-                f.hide_set(False)
+                f.hide = False
                 f[enabledl] = 1
             else:
                 # boundary block disabled
-                f.hide_set(True)
+                f.hide = True
                 f[enabledl] = False
 
     for e in bm.edges:
@@ -566,7 +566,7 @@ def hideFacesEdges(ob, showInternal = False):
                 e.hide = False
                 continue
         if not edge_found:
-            e.hide_set(True)
+            e.hide = True
 
     bpy.ops.swift_block.draw_edge_directions('INVOKE_DEFAULT',show=False)
     ob.data.update()
@@ -641,15 +641,10 @@ def writeProjectionObjects(ob, path, onlyFaces = False):
     objects = set(objects)
     for o in objects:
         sob = bpy.data.objects[o]
-        hide = sob.hide
+        hide = sob.hide_get()
         blender_utils.activateObject(sob)
-        # In older Blender versions < 2.76 only the selection is exported.
-        # In newer versions there is a new argument use_selection which is by default False.
-        if blender_version < 77:
-            bpy.ops.export_mesh.stl('EXEC_DEFAULT',filepath = path + '/{}.stl'.format(o))
-        else:
-            bpy.ops.export_mesh.stl('EXEC_DEFAULT',filepath = path + '/{}.stl'.format(o),use_selection=True)
-        sob.hide = hide
+        bpy.ops.export_mesh.stl(filepath = path + '/{}.stl'.format(o), use_selection=True)
+        sob.hide_set(hide)
     blender_utils.activateObject(ob)
     return objects
 
@@ -700,7 +695,7 @@ def getPolyLines(verts, edges, bob):
     mesh_data.from_pydata(geo_verts, geo_edges, [])
     mesh_data.update()
     geoobj = bpy.data.objects.new('deleteme', mesh_data)
-    bpy.context.scene.objects.link(geoobj)
+    bpy.context.collection.objects.link(geoobj)
     geo_verts = list(blender_utils.vertices_from_mesh(geoobj))
     geo_edges = list(blender_utils.edges_from_mesh(geoobj))
     bpy.context.view_layer.objects.active=geoobj
@@ -717,7 +712,7 @@ def getPolyLines(verts, edges, bob):
     bpy.ops.wm.context_set_value(data_path="tool_settings.mesh_select_mode", value="(True,False,False)")
     for edid, ed in enumerate(edges):
         if ed[0] in snapped_verts and ed[1] in snapped_verts:# and not nosnap[edid]:
-            geoobj.hide = False
+            geoobj.hide_set(False)
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.select_all(action='DESELECT')
             bpy.ops.object.mode_set(mode='OBJECT')

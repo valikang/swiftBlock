@@ -289,7 +289,7 @@ class SWIFTBLOCK_OT_BoundariesAction(bpy.types.Operator):
 
         if self.action == 'REMOVE':
             mat_name = ob.active_material.name
-            ob.data.materials.pop(ob.active_material_index)
+            ob.data.materials.pop(index=ob.active_material_index)
             if not bpy.data.materials[mat_name].users:
                 bpy.data.materials.remove(bpy.data.materials[mat_name])
 
@@ -330,7 +330,7 @@ class SWIFTBLOCK_UL_projection_items(bpy.types.UIList):
         c.type = proj.type
         c.id = proj.id
         split = split.split(factor=0.6)
-        c = split.operator("swift_block.activate_snap", text=proj.ob.name, emboss=False, icon="OBJECT_DATA")
+        c = split.operator("swift_block.activate_snap", text=proj.ob, emboss=False, icon="OBJECT_DATA")
         c.ob = proj.ob
         c = split.operator("swift_block.remove_projection", text='', emboss = False, icon='X')
         c.proj_id = index
@@ -1144,17 +1144,17 @@ class SWIFTBLOCK_OT_DrawEdgeDirections(bpy.types.Operator):
             tob.scale = (scale,scale,scale)
             tob.rotation_mode = 'QUATERNION'
             tob.rotation_quaternion = (v1-v2).to_track_quat('Z','Y')
-            context.scene.objects.link(tob)
+            bpy.context.collection.objects.link(tob)
             arrows.append(tob)
             tob.select_set(True)
         aob = arrows[0]
         bpy.context.view_layer.objects.active = aob
         aob.name = 'Edge_directions'
-        aob.hide_select = True
+        aob.hide_select_set(True)
 
         mat = bpy.data.materials.new('black')
-        mat.emit = 2
-        mat.diffuse_color = (0,0,0)
+        #mat.emit = 2
+        mat.diffuse_color = (0,0,0,1)
         bpy.ops.object.material_slot_add()
         aob.material_slots[-1].material = mat
         self.remove(context, default_arrow)
@@ -1167,7 +1167,7 @@ class SWIFTBLOCK_OT_DrawEdgeDirections(bpy.types.Operator):
         return {"FINISHED"}
 
     def remove(self, context, ob):
-        context.scene.objects.unlink(ob)
+        bpy.context.collection.objects.unlink(ob)
         bpy.data.objects.remove(ob)
 
 
