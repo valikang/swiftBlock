@@ -61,37 +61,43 @@ bpy.types.Object.swiftBlock_direction_object = bpy.props.StringProperty(default=
 bpy.types.Object.swiftBlock_isdirectionObject = bpy.props.BoolProperty(default=False)
 
 bpy.types.Object.swiftBlock_Mesher = bpy.props.EnumProperty(
-    name="",
+    name="Blocking Method Selection",
     items = (
-        ("blockMeshMG","blockMeshMG","",1),
-        ("blockMeshBodyFit","blockMeshBodyFit","",2),
+        ("blockMeshMG","blockMeshMG","Block Mesh (with Multi Grading and Projections)", 1),
+        # blockMeshBodyFit has not been upgraded/tested with Blender 2.8, disable for now
+        # ("blockMeshBodyFit","blockMeshBodyFit","Body Fit Method (Requires blockMeshBodyFit)", 2),
     ),
     update=changeMesher)
 
 # Blocking properties
 bpy.types.Object.swiftBlock_blocks = bpy.props.CollectionProperty(type=SWIFTBLOCK_PG_BlockProperty)
 bpy.types.Object.swiftBlock_block_index = bpy.props.IntProperty()
-bpy.types.Object.swiftBlock_useNumba = bpy.props.BoolProperty(default=False, name="Use Numba?")
+bpy.types.Object.swiftBlock_useNumba = bpy.props.BoolProperty(
+    name="Use Numba",
+    description="Option to Use Python Numba Performance Library (Must be Installed Separately)",
+    default=False,
+)
 
 # Projection/snapping properties
 bpy.types.Object.swiftBlock_projections = \
     bpy.props.CollectionProperty(type=SWIFTBLOCK_PG_ProjectionProperty)
 bpy.types.Object.swiftBlock_projection_index = bpy.props.IntProperty()
 bpy.types.Object.swiftBlock_Autosnap = bpy.props.BoolProperty(
-    name="Automatic edge projection",
-    description = "Snap lines automatically from geometry?"
+    name="Automatic Edge Projection",
+    description = "Option to Snap Lines Automatically from Geometry"
 )
 bpy.types.Object.swiftBlock_ShowInternalFaces = bpy.props.BoolProperty(
     name="Show Internal Faces",
+    description = "Show Internal Faces",
     default=False, update=showInternalFaces
 )
 bpy.types.Object.swiftBlock_ProjectionObject = bpy.props.EnumProperty(
-    name="Projection object", 
-    items=getProjectionObjects, description = "Projection object"
+    name="Projection Object", 
+    items=getProjectionObjects, description = "Projection Object"
 )
 bpy.types.Object.swiftBlock_EdgeSnapObject = bpy.props.EnumProperty(
     name="Object", 
-    items=getProjectionObjects, description = "Projection object"
+    items=getProjectionObjects, description = "Projection Object"
 )
 
 # Mapping properties
@@ -101,15 +107,24 @@ bpy.types.Object.swiftBlock_MappingType = bpy.props.EnumProperty(
              ("Geometric","Geometric","",2),)
 )
 
-# bpy.types.Object.swiftBlock_Dx = bpy.props.FloatProperty(name="dx", default=1, update=setCellSize, min=0)
-bpy.types.Object.swiftBlock_Cells = bpy.props.IntProperty(name="Cells", default=10,  min=1)
-bpy.types.Object.swiftBlock_x1 = bpy.props.FloatProperty(name="x1", default=0, description="First cell size", min=0)
-bpy.types.Object.swiftBlock_x2 = bpy.props.FloatProperty(name="x2", default=0, description="Last cell size",  min=0)
-bpy.types.Object.swiftBlock_r1 = bpy.props.FloatProperty(name="r1", default=1.2, description="First boundary layer geometric ratio", min=1.0)
-bpy.types.Object.swiftBlock_r2 = bpy.props.FloatProperty(name="r2", default=1.2, description="Last boundary layer geometric ratio", min=1.0)
-bpy.types.Object.swiftBlock_Ratio = bpy.props.FloatProperty(name="Ratio", default=1.0, description="Ratio of first cell to last cell", min=0)
-bpy.types.Object.swiftBlock_SearchLength = bpy.props.FloatProperty(name="Search Length", default=1.0, description="", min=0)
-# bpy.types.Object.swiftBlock_ShowEdgeDirections = bpy.props.BoolProperty(name="Show directions", default=True, update = updateEdgeDirections, description="Show edge directions?")
+# bpy.types.Object.swiftBlock_Dx = bpy.props.FloatProperty(
+#    name="dx", default=1, update=setCellSize, min=0)
+bpy.types.Object.swiftBlock_Cells = bpy.props.IntProperty(
+    name="Cells", default=10, min=1, description="Number of Cell Divisions for Edge")
+bpy.types.Object.swiftBlock_x1 = bpy.props.FloatProperty(
+    name="x1", default=0.1, description="First Cell Edge Length", min=0)
+bpy.types.Object.swiftBlock_x2 = bpy.props.FloatProperty(
+    name="x2", default=0.1, description="Last Cell Edge Length", min=0)
+bpy.types.Object.swiftBlock_r1 = bpy.props.FloatProperty(
+    name="r1", default=1.2, description="First Boundary Layer Geometric Ratio", min=1.0)
+bpy.types.Object.swiftBlock_r2 = bpy.props.FloatProperty(
+    name="r2", default=1.2, description="Last Boundary Layer Geometric Ratio", min=1.0)
+bpy.types.Object.swiftBlock_Ratio = bpy.props.FloatProperty(
+    name="Ratio", default=1.0, description="Ratio of First Cell Length to Last Cell Length", min=0)
+bpy.types.Object.swiftBlock_SearchLength = bpy.props.FloatProperty(
+    name="Search Length", default=1.0, description="Search Length", min=0)
+# bpy.types.Object.swiftBlock_ShowEdgeDirections = bpy.props.BoolProperty(
+#    name="Show directions", default=True, update = updateEdgeDirections, description="Show edge directions?")
 
 # Boundary condition properties
 bpy.types.Object.swiftBlock_bcTypeEnum = bpy.props.EnumProperty(
@@ -118,28 +133,32 @@ bpy.types.Object.swiftBlock_bcTypeEnum = bpy.props.EnumProperty(
              ('empty', 'empty', 'Defines the patch as empty'),
              ('symmetry', 'symmetry', 'Defines the patch as symmetry'),
     ],
-    name = "Patch type"
+    name = "Patch Type"
 )
 bpy.types.Object.swiftBlock_patchName = bpy.props.StringProperty(
-    name = "Patch name",
-    description = "Specify name of patch",
-    default = "defaultName"
+    name = "Patch Name",
+    description = "Specify Name of Patch",
+    default = "default"
 )
-bpy.types.Object.swiftBlock_boundary_index = bpy.props.IntProperty(update=selectActiveBoundary)
+bpy.types.Object.swiftBlock_boundary_index = bpy.props.IntProperty(
+    description = "Boundary Patch Index",
+    update = selectActiveBoundary
+)
 bpy.types.Material.boundary_type = bpy.props.EnumProperty(
-    items = [('wall', 'wall',''),
-             ('patch', 'patch',''),
-             ('empty', 'empty',''),
-             ('symmetry', 'symmetry',''),
+    items = [('wall', 'wall', '', 1),
+             ('patch', 'patch', '', 2),
+             ('empty', 'empty', '', 3),
+             ('symmetry', 'symmetry', '', 4),
     ],
-    name = "Patch type"
+    name = "Patch Type",
+    description = "Boundary Patch Type"
 )
 
 # Edge group properties
 bpy.types.Object.swiftBlock_edge_groups = \
     bpy.props.CollectionProperty(type=SWIFTBLOCK_PG_EdgeGroupProperty)
 bpy.types.Object.swiftBlock_EdgeGroupName = bpy.props.StringProperty(
-    name = "Name",default="group name",
+    name = "Name", default="group name",
     description = "Specify name of edge group"
 )
 
@@ -162,30 +181,32 @@ class VIEW3D_PT_SwiftBlockPanel(bpy.types.Panel):
 
         if ob.swiftBlock_ispreviewObject:
             box = self.layout.box()
-            box.operator("swift_block.activate_blocking", text="Activate blocking").hide = True
+            box.operator("swift_block.activate_blocking").hide = True
         elif ob.swiftBlock_blocking_object and ob.name != ob.swiftBlock_blocking_object:
             box = self.layout.box()
-            box.operator("swift_block.activate_blocking", text="Activate blocking").hide = False
+            box.operator("swift_block.activate_blocking").hide = False
         elif not ob.swiftBlock_isblockingObject and ob.type == 'MESH':
-            box.operator("swift_block.init_blocking", text="Initialize blocking")
+            box.operator("swift_block.init_blocking")
 
         elif context.active_object and bpy.context.active_object.mode == "EDIT":
 
             box = self.layout.box()
-            box.prop(ob,"swiftBlock_Mesher")
+            box.label(text="Block Method Settings")
+            box.alignment = 'RIGHT'
+            box.prop(ob, "swiftBlock_Mesher", text="Method")
             split = box.split(factor=0.5)
-            split.operator("swift_block.build_blocking", text="Build Blocking")
+            split.operator("swift_block.build_blocking")
             split.prop(ob, "swiftBlock_useNumba")
 
             split = box.split()
-            split.operator("swift_block.preview_mesh", text="Preview mesh")
+            split.operator("swift_block.preview_mesh")
             split = split.split()
-            split.operator("swift_block.write_mesh", text="Write mesh")
+            split.operator("swift_block.write_mesh")
             box.template_list("SWIFTBLOCK_UL_block_items", "", ob, "swiftBlock_blocks", ob, "swiftBlock_block_index", rows=2)
             box.operator("swift_block.get_block")
 
             box = self.layout.box()
-            box.label(text="Edge mapping")
+            box.label(text="Edge Settings")
             # box.prop(ob, "swiftBlock_MappingType")
             split = box.split()
             split.prop(ob, "swiftBlock_Cells")
@@ -236,7 +257,7 @@ class VIEW3D_PT_SwiftBlockPanel(bpy.types.Panel):
 
             
             box = self.layout.box()
-            box.label(text="Boundary conditions")
+            box.label(text="Boundary Patches")
             row = box.row()
             row.template_list("SWIFTBLOCK_UL_boundary_items", "", ob.data, "materials", ob, "swiftBlock_boundary_index", rows=2)
             col = row.column(align=True)
@@ -272,7 +293,8 @@ class SWIFTBLOCK_UL_boundary_items(bpy.types.UIList):
 
 class SWIFTBLOCK_OT_BoundariesAction(bpy.types.Operator):
     bl_idname = "swift_block.boundaries_action"
-    bl_label = "Boundaries action"
+    bl_label = "Boundary Action"
+    bl_description = "Runs Action on Selected Boundary"
 
     action: bpy.props.EnumProperty(
         items=(
@@ -339,7 +361,8 @@ class SWIFTBLOCK_UL_projection_items(bpy.types.UIList):
 # Initialize all the bmesh layer properties for the blocking object
 class SWIFTBLOCK_OT_InitBlocking(bpy.types.Operator):
     bl_idname = "swift_block.init_blocking"
-    bl_label = "Init blocking"
+    bl_label = "Initialize Object"
+    bl_description = "Initializes the Active Object for SwiftBlock"
     bl_options = {"UNDO"}
 
     def invoke(self, context, event):
@@ -379,7 +402,8 @@ class SWIFTBLOCK_OT_InitBlocking(bpy.types.Operator):
 # Automatical block detection.
 class SWIFTBLOCK_OT_BuildBlocking(bpy.types.Operator):
     bl_idname = "swift_block.build_blocking"
-    bl_label = "Build blocking"
+    bl_label = "Build Blocking"
+    bl_description = "Generates Blocks from Mesh (Main Routine)"
     bl_options = {"UNDO"}
 
     def invoke(self, context, event):
@@ -492,7 +516,8 @@ class SWIFTBLOCK_OT_BuildBlocking(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_PreviewMesh(bpy.types.Operator):
     bl_idname = "swift_block.preview_mesh"
-    bl_label = "Preview mesh"
+    bl_label = "Preview"
+    bl_description = "Preview Build Blocking Mesh Result"
     bl_options = {"UNDO"}
 
     filename: bpy.props.StringProperty(default='')
@@ -507,7 +532,8 @@ class SWIFTBLOCK_OT_PreviewMesh(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_WriteMesh(bpy.types.Operator):
     bl_idname = "swift_block.write_mesh"
-    bl_label = "Write Mesh"
+    bl_label = "Export"
+    bl_description = "Generates OpenFOAM Files to a Case Folder"
 
     filepath: bpy.props.StringProperty(subtype='DIR_PATH')
     # filepath = bpy.props.StringProperty(
@@ -539,7 +565,8 @@ class SWIFTBLOCK_OT_WriteMesh(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_ActivateBlocking(bpy.types.Operator):
     bl_idname = "swift_block.activate_blocking"
-    bl_label = "Activate blocking"
+    bl_label = "Return to SwiftBlock"
+    bl_description = "Go Back to SwiftBlock Settings"
     bl_options = {"UNDO"}
 
     hide: bpy.props.BoolProperty()
@@ -554,7 +581,8 @@ class SWIFTBLOCK_OT_ActivateBlocking(bpy.types.Operator):
 class SWIFTBLOCK_OT_GetBlock(bpy.types.Operator):
     """Get block from selection"""
     bl_idname = "swift_block.get_block"
-    bl_label = "Get block"
+    bl_label = "Get Block from Selection"
+    bl_description = "Identifies the Block from Active Selection"
     bl_options = {'REGISTER', 'UNDO'}
     
     def invoke(self, context, event):
@@ -584,7 +612,8 @@ class SWIFTBLOCK_OT_GetBlock(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_EditBlock(bpy.types.Operator):
     bl_idname = "swift_block.edit_block"
-    bl_label = "Edit block"
+    bl_label = "Select Block"
+    bl_description = "Selects Block for Editing"
     bl_options = {'REGISTER', 'UNDO'}
 
 
@@ -641,7 +670,8 @@ class SWIFTBLOCK_OT_EditBlock(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_EnableBlock(bpy.types.Operator):
     bl_idname = "swift_block.enable_block"
-    bl_label = "Enable/disable block"
+    bl_label = "Include in Build Blocking"
+    bl_description = "Option to Include This Block in Build Blocking"
 
     blockid: bpy.props.IntProperty()
 
@@ -666,7 +696,8 @@ class SWIFTBLOCK_OT_EnableBlock(bpy.types.Operator):
 class SWIFTBLOCK_OT_SetEdge(bpy.types.Operator):
     """Set mapping for the edge"""
     bl_idname = "swift_block.set_edge"
-    bl_label = "Set edge"
+    bl_label = "Set Params"
+    bl_description = "Set Parameters for Currently Selected Edges"
     bl_options = {"UNDO"}
 
     def execute(self, context):
@@ -702,7 +733,8 @@ class SWIFTBLOCK_OT_SetEdge(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_GetEdge(bpy.types.Operator):
     bl_idname = "swift_block.get_edge"
-    bl_label = "Get edge"
+    bl_label = "Get Params"
+    bl_description = "Get Parameter Values from Active Edge"
     bl_options = {"UNDO"}
 
     def execute(self, context):
@@ -732,7 +764,8 @@ class SWIFTBLOCK_OT_GetEdge(bpy.types.Operator):
 class SWIFTBLOCK_OT_SetCellSize(bpy.types.Operator):
     """Calculates the number of cells from maximum cell size"""
     bl_idname = "swift_block.set_cellsize"
-    bl_label = "Set cell size"
+    bl_label = "Set Cell Size"
+    bl_description = "Set Cell Size"
     bl_options = {"UNDO"}
 
     def execute(self, context):
@@ -778,7 +811,8 @@ class SWIFTBLOCK_OT_SetCellSize(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_EdgeSelectParallel(bpy.types.Operator):
     bl_idname = "swift_block.edge_select_parallel"
-    bl_label = "Select parallel edges"
+    bl_label = "Select Group"
+    bl_description = "Selects All Edges in Active Edge Group"
 
     def execute(self, context):
         ob = context.active_object
@@ -796,7 +830,8 @@ class SWIFTBLOCK_OT_EdgeSelectParallel(bpy.types.Operator):
 class SWIFTBLOCK_OT_FlipEdges(bpy.types.Operator):
     """Flips parallel edges, select only one edge per group"""
     bl_idname = "swift_block.flip_edges"
-    bl_label = "Flip edges"
+    bl_label = "Flip Dir"
+    bl_description = "Flip Edge Direction"
 
     def execute(self, context):
         ob = context.active_object
@@ -827,7 +862,8 @@ class SWIFTBLOCK_OT_FlipEdges(bpy.types.Operator):
 # layer.
 class SWIFTBLOCK_OT_GetProjection(bpy.types.Operator):
     bl_idname = "swift_block.get_projection"
-    bl_label = "Get projection"
+    bl_label = "Get Projection"
+    bl_description = "Get Projection"
 
     id: bpy.props.IntProperty()
     type: bpy.props.StringProperty()
@@ -854,11 +890,12 @@ class SWIFTBLOCK_OT_GetProjection(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_AddProjections(bpy.types.Operator):
     bl_idname = "swift_block.add_projections"
-    bl_label = "Project to surface"
+    bl_label = "Project to Selected Object"
+    bl_description = "Project to Selected Object"
     bl_options = {"REGISTER","UNDO"}
 
-    pob: bpy.props.EnumProperty(name="Projection object",
-            items=getProjectionObjects, description = "Projection object")
+    pob: bpy.props.EnumProperty(name="Projection Object",
+            items=getProjectionObjects, description = "Projection Object")
 
     verts: bpy.props.BoolProperty(default=True)
     edges: bpy.props.BoolProperty(default=True)
@@ -911,7 +948,8 @@ class SWIFTBLOCK_OT_AddProjections(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_RemoveProjection(bpy.types.Operator):
     bl_idname = "swift_block.remove_projection"
-    bl_label = "Remove projection"
+    bl_label = "Remove Projection"
+    bl_description = "Remove Projection"
     bl_options = {"UNDO"}
 
     proj_id: bpy.props.IntProperty(default = -1)
@@ -924,7 +962,8 @@ class SWIFTBLOCK_OT_RemoveProjection(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_RemoveProjections(bpy.types.Operator):
     bl_idname = "swift_block.remove_projections"
-    bl_label = "Remove projections"
+    bl_label = "Remove Projections"
+    bl_description = "Remove All Projections"
     bl_options = {"UNDO"}
 
 
@@ -956,7 +995,8 @@ class SWIFTBLOCK_OT_RemoveProjections(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_ActivateSnap(bpy.types.Operator):
     bl_idname = "swift_block.activate_snap"
-    bl_label = "Activate snapping object"
+    bl_label = "Activate Snapping Object"
+    bl_description = "Activate Snapping Object"
     bl_options = {"UNDO"}
 
     ob: bpy.props.StringProperty()
@@ -972,7 +1012,8 @@ class SWIFTBLOCK_OT_ActivateSnap(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_EdgetoPolyLine(bpy.types.Operator):
     bl_idname = "swift_block.edge_to_polyline"
-    bl_label = "Project edge to polyline"
+    bl_label = "Project Edge to Polyline"
+    bl_description = "Project Edge to Polyline"
     bl_options = {"REGISTER", "UNDO"}
 
     def invoke(self, context, event):
@@ -1012,7 +1053,8 @@ class SWIFTBLOCK_OT_EdgetoPolyLine(bpy.types.Operator):
 # Edge group operators
 class SWIFTBLOCK_OT_RemoveEdgeGroup(bpy.types.Operator):
     bl_idname = "swift_block.remove_edge_group"
-    bl_label = "Remove edge group"
+    bl_label = "Remove Edge Group"
+    bl_description = "Remove Edge Group"
     egName: bpy.props.StringProperty()
 
     def execute(self, context):
@@ -1026,7 +1068,8 @@ class SWIFTBLOCK_OT_RemoveEdgeGroup(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_GetEdgeGroup(bpy.types.Operator):
     bl_idname = "swift_block.get_edge_group"
-    bl_label = "Get edge group"
+    bl_label = "Get Edge Group"
+    bl_description = "Get Edge Group"
 
     egName: bpy.props.StringProperty()
 
@@ -1048,7 +1091,8 @@ class SWIFTBLOCK_OT_GetEdgeGroup(bpy.types.Operator):
 class SWIFTBLOCK_OT_AddEdgeGroup(bpy.types.Operator):
     """Set the given name to the selected edges"""
     bl_idname = "swift_block.add_edge_group"
-    bl_label = "Add edge group"
+    bl_label = "Add Edge Group"
+    bl_description = "Add Edge Group"
 
     def execute(self, context):
         scn = context.scene
@@ -1071,7 +1115,8 @@ class SWIFTBLOCK_OT_AddEdgeGroup(bpy.types.Operator):
 class SWIFTBLOCK_OT_ExtrudeBlocks(bpy.types.Operator):
     """Extrude blocks without removing internal edges"""
     bl_idname = "swift_block.extrude_blocks"
-    bl_label = "Extrude blocks"
+    bl_label = "Extrude Blocks (Retain Internal Edges)"
+    bl_description = "Extrude Blocks without Removing Internal Edges (BlockSwift)"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -1097,7 +1142,8 @@ class SWIFTBLOCK_OT_ExtrudeBlocks(bpy.types.Operator):
 class SWIFTBLOCK_OT_DrawEdgeDirections(bpy.types.Operator):
     """Draw edge directions"""
     bl_idname = "swift_block.draw_edge_directions"
-    bl_label = "draw edge directions"
+    bl_label = "Draw Edge Directions"
+    bl_description = "Draw Edge Directions"
     bl_options = {'REGISTER', 'UNDO'}
 
     show: bpy.props.BoolProperty(default=True)
@@ -1173,8 +1219,8 @@ class SWIFTBLOCK_OT_DrawEdgeDirections(bpy.types.Operator):
 
 class SWIFTBLOCK_OT_EdgeVisualiser(bpy.types.Operator):
     bl_idname = "swift_block.edge_visualiser"
-    bl_label = "Edge Visualiser"
-    bl_description = "Show edge directions"
+    bl_label = "Show Edge Directions"
+    bl_description = "Show Edge Directions"
 
     def modal(self, context, event):
         context.area.tag_redraw()
@@ -1193,6 +1239,7 @@ class SWIFTBLOCK_OT_EdgeVisualiser(bpy.types.Operator):
             self.report({"WARNING"}, "View3D not found, can't run operator")
             return {"CANCELLED"}
 
+# -----------------
         
 classes = (
     SWIFTBLOCK_PG_BlockProperty,
