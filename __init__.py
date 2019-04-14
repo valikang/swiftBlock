@@ -224,9 +224,9 @@ class VIEW3D_PT_SwiftBlockPanel(bpy.types.Panel):
             box.template_list("SWIFTBLOCK_UL_projection_items", "", ob, "swiftBlock_projections", ob, "swiftBlock_projection_index", rows=2)
             if ob.swiftBlock_Autosnap:
                 split = box.split(factor=0.1)
-                split.prop(ob, "swiftBlock_Autosnap", "")
+                split.prop(ob, "swiftBlock_Autosnap", text="")
                 split = split.split(factor=0.9)
-                split.prop(ob, "swiftBlock_EdgeSnapObject",'')
+                split.prop(ob, "swiftBlock_EdgeSnapObject", text="")
                 if ob.swiftBlock_EdgeSnapObject != "":
                     o = split.operator("swift_block.activate_snap",text="",emboss=False,icon="OBJECT_DATA")
                     o.ob = ob.swiftBlock_EdgeSnapObject
@@ -1150,7 +1150,7 @@ class SWIFTBLOCK_OT_DrawEdgeDirections(bpy.types.Operator):
         aob = arrows[0]
         bpy.context.view_layer.objects.active = aob
         aob.name = 'Edge_directions'
-        aob.hide_select_set(True)
+        aob.hide_select = True
 
         mat = bpy.data.materials.new('black')
         #mat.emit = 2
