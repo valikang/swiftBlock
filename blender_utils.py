@@ -71,7 +71,6 @@ def previewMesh(ob, points, faces):
     blocking = ob
     blocking.hide_set(True)
     blocking.select_set(False)
-    scn = bpy.context.scene
     if not ob.swiftBlock_preview_object or \
        not ob.swiftBlock_preview_object in bpy.data.objects:
         mesh_data = bpy.data.meshes.new("previewMesh")
@@ -94,7 +93,7 @@ def previewMesh(ob, points, faces):
     bpy.context.view_layer.objects.active = previewMeshOb
     # FIXME: show_extra_edge_length is now Overlay property, find out how to do this.
     #bpy.context.object.data.show_extra_edge_length = True
-    bpy.ops.object.mode_set(mode='EDIT')
+    #bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='DESELECT')
     bpy.ops.object.mode_set(mode='OBJECT')

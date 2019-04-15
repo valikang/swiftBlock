@@ -651,7 +651,6 @@ def writeProjectionObjects(ob, path, onlyFaces = False):
 
 # Kalle's implementation
 def getPolyLines(verts, edges, bob):
-    scn = bpy.context.scene
     polyLinesPoints = []
     polyLines = ''
     polyLinesLengths = [[], []]

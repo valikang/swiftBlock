@@ -8,10 +8,10 @@ import glob
 from . import utils
 class PreviewMesh():
     def __init__(self, folder=None):
-        if not shutil.which('blockMesh'):
-            raise RuntimeError('ERROR: Could not find blockMesh! Please source OpenFOAM in terminal and start Blender from that terminal so that BlockMeshMG finds blockMesh command.')
-        else:
-            self.blockMeshbin = 'blockMesh'
+        #if not shutil.which('blockMesh'):
+        #    # raise RuntimeError('ERROR: Could not find blockMesh! Please source OpenFOAM in terminal and start Blender from that terminal so that BlockMeshMG finds blockMesh command.')
+        #else:
+        #    self.blockMeshbin = 'blockMesh'
         if folder:
             if not os.path.isdir(folder):
                 os.mkdir(folder)
@@ -203,8 +203,11 @@ class PreviewMesh():
         subprocess.call([self.blockMeshbin,'-case',self.tempdir],stdout=subprocess.PIPE)
 
     def runMesh(self,runBlockMesh=True,internalCells=False):
-        print('running blockmesh')
+        if not shutil.which('blockMesh'):
+            return [], []
         if runBlockMesh:
+            self.blockMeshbin = 'blockMesh'
+            print('running blockMesh')
             self.runBlockMesh()
         faces, bcifaces=self.getBCFaces2(internalCells)
         points=self.getPoints(faces)

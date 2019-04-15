@@ -63,7 +63,7 @@ bpy.types.Object.swiftBlock_isdirectionObject = bpy.props.BoolProperty(default=F
 bpy.types.Object.swiftBlock_Mesher = bpy.props.EnumProperty(
     name="Blocking Method Selection",
     items = (
-        ("blockMeshMG","blockMeshMG","Block Mesh (with Multi Grading and Projections)", 1),
+        ("blockMeshMG","blockMeshMG","Block Mesh (with Multigrading and Projections)", 1),
         # blockMeshBodyFit has not been upgraded/tested with Blender 2.8, disable for now
         # ("blockMeshBodyFit","blockMeshBodyFit","Body Fit Method (Requires blockMeshBodyFit)", 2),
     ),
@@ -173,7 +173,6 @@ class VIEW3D_PT_SwiftBlockPanel(bpy.types.Panel):
     bl_label = "SwiftBlock"
 
     def draw(self, context):
-        scn = context.scene
         ob = context.active_object
         if not ob:
             return
@@ -283,9 +282,7 @@ class SWIFTBLOCK_UL_block_items(bpy.types.UIList):
 
 class SWIFTBLOCK_UL_boundary_items(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
-        ob = context.active_object
-        me = data
-        mat = me.materials[index]
+        mat = data.materials[index]
         split = layout.split(factor=0.2)
         split.prop(item, "diffuse_color", text='')
         split.prop(item, "name", text='', emboss = False)
@@ -495,15 +492,14 @@ class SWIFTBLOCK_OT_BuildBlocking(bpy.types.Operator):
         edgeDirections = utils.getEdgeDirections(block_verts, block_edges)
 
         ob = bpy.context.active_object
-        me = ob.data
         edgelist = dict()
-        for e in me.edges:
+        for e in ob.data.edges:
             edgelist[(e.vertices[0],e.vertices[1])] = e.index
         for ed in edgeDirections:
             # consistentEdgeDirs(ed)
             for e in ed:
                 if (e[0],e[1]) not in edgelist:
-                    ei = me.edges[edgelist[(e[1],e[0])]]
+                    ei = ob.data.edges[edgelist[(e[1],e[0])]]
                     (e0, e1) = ei.vertices
                     ei.vertices = (e1, e0)
         bpy.ops.object.mode_set(mode='EDIT')
@@ -517,7 +513,7 @@ class SWIFTBLOCK_OT_BuildBlocking(bpy.types.Operator):
 class SWIFTBLOCK_OT_PreviewMesh(bpy.types.Operator):
     bl_idname = "swift_block.preview_mesh"
     bl_label = "Preview"
-    bl_description = "Preview Build Blocking Mesh Result"
+    bl_description = "Preview the Blocking Result"
     bl_options = {"UNDO"}
 
     filename: bpy.props.StringProperty(default='')
@@ -526,8 +522,11 @@ class SWIFTBLOCK_OT_PreviewMesh(bpy.types.Operator):
         ob = context.active_object
         mesh, cells = writeMesh(ob)
         points, faces = mesh.runMesh()
+        if points == []:
+            self.report({'ERROR'}, "blockMesh command not found! Preview is unavailable. Source OpenFOAM in terminal and start Blender from that terminal to enable previewing.")
+        else:
+            self.report({'INFO'}, "Cells in mesh: " + str(cells))
         blender_utils.previewMesh(ob, points, faces)
-        self.report({'INFO'}, "Cells in mesh: " + str(cells))
         return {"FINISHED"}
 
 class SWIFTBLOCK_OT_WriteMesh(bpy.types.Operator):
@@ -572,7 +571,6 @@ class SWIFTBLOCK_OT_ActivateBlocking(bpy.types.Operator):
     hide: bpy.props.BoolProperty()
 
     def invoke(self, context, event):
-        scn = context.scene
         ob = context.active_object
         bob = bpy.data.objects[ob.swiftBlock_blocking_object]
         blender_utils.activateObject(bob, self.hide)
@@ -647,11 +645,10 @@ class SWIFTBLOCK_OT_EditBlock(bpy.types.Operator):
 
     def execute(self, context):
         bpy.ops.mesh.select_all(action="DESELECT")
-        scn = context.scene
         ob = context.active_object
         ob.swiftBlock_blocks[self.blockid].name = self.name
         ob.swiftBlock_blocks[self.blockid].namedRegion = self.namedRegion
-        ob = context.active_object
+        # OK to remove? ob = context.active_object
 
         verts = ob.swiftBlock_blocks[self.blockid].verts
 
@@ -676,7 +673,6 @@ class SWIFTBLOCK_OT_EnableBlock(bpy.types.Operator):
     blockid: bpy.props.IntProperty()
 
     def execute(self, context):
-        scn = context.scene
         ob = context.active_object
         block = ob.swiftBlock_blocks[self.blockid]
         ob.swiftBlock_block_index = self.blockid
@@ -702,7 +698,6 @@ class SWIFTBLOCK_OT_SetEdge(bpy.types.Operator):
 
     def execute(self, context):
         ob = context.active_object
-        scn = context.scene
         if not ob.swiftBlock_blocks:
             bpy.ops.swift_block.build_blocking('INVOKE_DEFAULT')
 
@@ -739,7 +734,6 @@ class SWIFTBLOCK_OT_GetEdge(bpy.types.Operator):
 
     def execute(self, context):
         ob = context.active_object
-        scn = context.scene
         if not ob.swiftBlock_blocks:
             bpy.ops.swift_block.build_blocking('INVOKE_DEFAULT')
 
@@ -770,8 +764,6 @@ class SWIFTBLOCK_OT_SetCellSize(bpy.types.Operator):
 
     def execute(self, context):
         ob = context.active_object
-        scn = context.scene
-
         bm = bmesh.from_edit_mesh(ob.data)
         typel = bm.edges.layers.string.get('type')
         x1l = bm.edges.layers.float.get('x1')
@@ -1003,7 +995,6 @@ class SWIFTBLOCK_OT_ActivateSnap(bpy.types.Operator):
 
 
     def invoke(self, context, event):
-        scn = context.scene
         ob = context.active_object
         pob = bpy.data.objects[self.ob]
         pob.swiftBlock_blocking_object = ob.name
@@ -1017,7 +1008,6 @@ class SWIFTBLOCK_OT_EdgetoPolyLine(bpy.types.Operator):
     bl_options = {"REGISTER", "UNDO"}
 
     def invoke(self, context, event):
-        scn = context.scene
         self.ob = context.active_object
         bm = bmesh.from_edit_mesh(self.ob.data)
 
@@ -1058,7 +1048,6 @@ class SWIFTBLOCK_OT_RemoveEdgeGroup(bpy.types.Operator):
     egName: bpy.props.StringProperty()
 
     def execute(self, context):
-        scn = context.scene
         ob = context.active_object
         for i,eg in enumerate(ob.swiftBlock_edge_groups):
             if eg.group_name == self.egName:
@@ -1074,7 +1063,6 @@ class SWIFTBLOCK_OT_GetEdgeGroup(bpy.types.Operator):
     egName: bpy.props.StringProperty()
 
     def execute(self, context):
-        scn = context.scene
         ob = context.active_object
         bpy.ops.mesh.select_all(action="DESELECT")
 
@@ -1095,7 +1083,6 @@ class SWIFTBLOCK_OT_AddEdgeGroup(bpy.types.Operator):
     bl_description = "Add Edge Group"
 
     def execute(self, context):
-        scn = context.scene
         ob = context.active_object
         ob.data.update()
         edges = []
