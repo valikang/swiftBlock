@@ -36,7 +36,10 @@ def findFace(faces, vl):
 
 
 def cycleFinder(edges,verts):
-# Credit: Adam Gaither. An Efficient Block Detection Algorithm For Structured Grid Generation
+# Credit: Adam Gaither, An Efficient Block Detection Algorithm For
+# Structured Grid Generation. Proc. 5th Int. Conf. Num. Grid
+# Generation in Comp. Field Simulations, pp. 443-451 (1996).
+
     verticesId = verts
     edgeVisited = np.zeros(len(edges), dtype=bool)
     faces = []
