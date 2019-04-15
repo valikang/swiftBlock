@@ -116,9 +116,9 @@ bpy.types.Object.swiftBlock_x1 = bpy.props.FloatProperty(
 bpy.types.Object.swiftBlock_x2 = bpy.props.FloatProperty(
     name="x2", default=0.1, description="Last Cell Edge Length", min=0)
 bpy.types.Object.swiftBlock_r1 = bpy.props.FloatProperty(
-    name="r1", default=1.2, description="First Boundary Layer Geometric Ratio", min=1.0)
+    name="r1", default=1.0, description="First Boundary Layer Geometric Ratio", min=1.0)
 bpy.types.Object.swiftBlock_r2 = bpy.props.FloatProperty(
-    name="r2", default=1.2, description="Last Boundary Layer Geometric Ratio", min=1.0)
+    name="r2", default=1.0, description="Last Boundary Layer Geometric Ratio", min=1.0)
 bpy.types.Object.swiftBlock_Ratio = bpy.props.FloatProperty(
     name="Ratio", default=1.0, description="Ratio of First Cell Length to Last Cell Length", min=0)
 bpy.types.Object.swiftBlock_SearchLength = bpy.props.FloatProperty(
