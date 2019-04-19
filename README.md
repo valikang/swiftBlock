@@ -1,7 +1,9 @@
 # SwiftBlock
-Blender addon for creating blockMeshDict files for OpenFOAM's blockMesh application. Compatible with Blender 3D 2.76 ->, OpenFOAM 5.0 -> and NumPy 1.13->
+Blender addon for creating blockMeshDict files for OpenFOAM's blockMesh application. Compatible with Blender 3D 2.80 (beta), OpenFOAM 6 and NumPy 1.13 or later.
 
-## New features:
+*Warning:* This is work in progress. There are still few things not working in Blender 2.80, and documentation needs to be updated. Below is original README, also to be updated:
+
+## Added features (https://github.com/flowkersma/swiftBlock):
 * The SwiftBlock panel has moved from the properties panel to the tools panel
 * The block structure is saved and therefore the time consuming block detection algorithm is only required when the block structure is changed
 * The blocks are listed in the SwiftBlock panel
