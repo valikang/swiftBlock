@@ -1,34 +1,40 @@
 # SwiftBlock
-Blender addon for creating blockMeshDict files for OpenFOAM's blockMesh application. Compatible with Blender 3D 2.80 (beta), OpenFOAM 6 and NumPy 1.13 or later.
 
-*Warning:* This is work in progress. There are still few things not working in Blender 2.80, and documentation needs to be updated. Below is original README, also to be updated:
+SwiftBlock is a [Blender](https://www.blender.org/) GUI add-on for
+the OpenFOAM® *blockMesh* utility, which creates hexahedral block
+structured volume meshes for OpenFOAM simulations. Block structure is
+first modelled as a mesh object in Blender. A graph theory based
+method implemented in the addon identifies the discrete hexahedral
+blocks in the mesh object and generates blockMeshDict. Main features
+include
 
-## Added features (https://github.com/flowkersma/swiftBlock):
-* The SwiftBlock panel has moved from the properties panel to the tools panel
-* The block structure is saved and therefore the time consuming block detection algorithm is only required when the block structure is changed
-* The blocks are listed in the SwiftBlock panel
-* Blocks can be selected, disabled and enabled interactively from the list
-* Blocks can be searched from the current mesh selection
-* Number of cells are defined instead of the maximum cell size
-* The parallel edges of an edge can be selected easily
-* The edge directions visualization
-* The new projection vertices, edges and faces to surfaces has been implemented
-* The projections are listed in the panel
-* The projections can be selected and removed from the list
-* Show/hide internal faces to make projections on them
-* The automatic snapping algorithm can also be selected
-* Extrude blocks operator which preserves internal edges and faces (ALT+E opens the extrude menu)
-* Faster block detection with Numba
+* user specified divisions and optional grading of block edges
+* specification of patches (boundary surfaces)
+* specification of blocks to create cell zones/sets
+* easy block manipulations including selection, visualisation and disabling of blocks
+* visualization of edge directions
+* projection of block edges to surfaces on another object to
+  create curved shapes
 
-## How to install Blender, NumPy and SwiftBlock on Ubuntu
-```bash
-sudo apt install blender
-sudo apt install python3-pip
-pip3 install numpy
-mkdir -p $HOME/.config/blender/2.xx/scripts/addons
-cd $HOME/.config/blender/2.xx/scripts/addons
-git clone https://github.com/flowkersma/swiftBlock/
-```
-Replace 2.xx with your Blender version. Load your OpenFOAM environment and launch Blender. In Blender open the preferences (File->User Preferences). Click on addons tab, search for SwiftBlock and enable it. 
+Application examples include creation of block meshes for
 
-Happy meshing!
+* orthogonal base mesh with elongated or stretched cells for
+  SnappyHexMesh
+* controlled grading of hexahedral meshes inside or outside
+  rectangular, cylindrical or spherical shapes.
+
+The add-on has been tested with
+[Blender 2.8](https://www.blender.org/2-8) (master branch) and
+[OpenFOAM Foundation](https://openfoam.org/) version 6 of OpenFOAM.
+
+## Documentation
+
+Documentation is available in the *doc* directory in the source code,
+and for web viewing at
+http://tkeskita.kapsi.fi/blender/SwiftBlock/docs/snappy_gui.html
+
+### OpenFOAM Trade Mark Notice
+
+This offering is not approved or endorsed by OpenCFD Limited, producer
+and distributor of the OpenFOAM software via www.openfoam.com, and
+owner of the OPENFOAM® and OpenCFD® trade marks.

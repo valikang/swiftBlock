@@ -399,7 +399,7 @@ class SWIFTBLOCK_OT_InitBlocking(bpy.types.Operator):
 # Automatical block detection.
 class SWIFTBLOCK_OT_BuildBlocking(bpy.types.Operator):
     bl_idname = "swift_block.build_blocking"
-    bl_label = "Build Blocking"
+    bl_label = "Build"
     bl_description = "Generates Blocks from Mesh (Main Routine)"
     bl_options = {"UNDO"}
 
