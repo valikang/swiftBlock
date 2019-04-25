@@ -6,7 +6,7 @@ bl_info = {
     "location": "View_3D > Object > SwiftBlock",
     "description": "Creates OpenFOAM blockMeshDict block geometry definition file",
     "warning": "",
-    "wiki_url": "http://openfoamwiki.net/index.php/SwiftBlock",
+    "wiki_url": "https://github.com/tkeskita/swiftBlock",
     "tracker_url": "https://github.com/tkeskita/swiftBlock/issues",
     "category": "OpenFOAM"}
 
