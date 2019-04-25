@@ -1,13 +1,13 @@
 bl_info = {
     "name": "SwiftBlock",
-    "author": "Karl-Johan Nogenmyr, Mikko Folkersma, Turo Valikangas",
+    "author": "Karl-Johan Nogenmyr, Mikko Folkersma, Turo Valikangas, Tuomo Keskitalo",
     "version": (0, 3),
     "blender": (2, 80, 0),
     "location": "View_3D > Object > SwiftBlock",
     "description": "Creates OpenFOAM blockMeshDict block geometry definition file",
     "warning": "",
     "wiki_url": "http://openfoamwiki.net/index.php/SwiftBlock",
-    "tracker_url": "",
+    "tracker_url": "https://github.com/tkeskita/swiftBlock/issues",
     "category": "OpenFOAM"}
 
 import bpy
@@ -1202,6 +1202,12 @@ class SWIFTBLOCK_OT_DrawEdgeDirections(bpy.types.Operator):
     def remove(self, context, ob):
         bpy.context.collection.objects.unlink(ob)
         bpy.data.objects.remove(ob)
+
+        # Remove lingering Arrow_duplicate objects
+        if not self.show:
+            for ob in bpy.data.objects:
+                if ob.name.startswith('Arrow_duplicate'):
+                    bpy.data.objects.remove(ob)
 
 
 class SWIFTBLOCK_OT_EdgeVisualiser(bpy.types.Operator):
