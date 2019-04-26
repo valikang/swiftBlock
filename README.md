@@ -31,7 +31,7 @@ The add-on has been tested with
 
 Documentation is available in the *doc* directory in the source code,
 and for web viewing at
-http://tkeskita.kapsi.fi/blender/SwiftBlock/docs/snappy_gui.html
+http://tkeskita.kapsi.fi/blender/SwiftBlock/docs/swift.html
 
 ### OpenFOAM Trade Mark Notice
 
