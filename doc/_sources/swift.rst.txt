@@ -1,6 +1,8 @@
 SwiftBlock Addon for Blender 2.8
 ================================
 
+.. image:: images/complex_block_with_elongations.png
+
 Introduction
 ------------
 
