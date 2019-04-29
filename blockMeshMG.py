@@ -23,6 +23,10 @@ class PreviewMesh():
                 os.mkdir(folder+'/system')
             self.blockMeshDictPath = folder + '/system/blockMeshDict'
             self.geomPath = folder+'/constant/geometry'
+            # blockMesh requires controlDict, create one if there is none
+            if not os.path.isfile(folder+'/system/controlDict'):            
+                cd = open(folder+'/system/controlDict','w')
+                cd.write(self.header())
         else:
             self.tempdir = tempfile.mkdtemp()
             self.blockMeshDictPath = self.tempdir+"/system/blockMeshDict"
