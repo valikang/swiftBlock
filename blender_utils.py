@@ -29,7 +29,7 @@ def vertices_from_mesh(ob):
 
     # get the modifiers
     try:
-        mesh = ob.to_mesh(bpy.context.depsgraph, False)
+        mesh = ob.to_mesh(depsgraph=bpy.context.evaluated_depsgraph_get())
     except RuntimeError:
         raise StopIteration
 
@@ -38,22 +38,18 @@ def vertices_from_mesh(ob):
     for v in mesh.vertices:
         yield (matrix @ v.co)
 
-    bpy.data.meshes.remove(mesh)
-
 def edges_from_mesh(ob):
     '''
     '''
 
     # get the modifiers
     try:
-        mesh = ob.to_mesh(bpy.context.depsgraph, False)
+        mesh = ob.to_mesh(depsgraph=bpy.context.evaluated_depsgraph_get())
     except RuntimeError:
         raise StopIteration
 
     for e in mesh.edges:
         yield list(e.vertices)
-
-    bpy.data.meshes.remove(mesh)
 
 def activateObject(ob, hideCurrent = False):
     bpy.ops.object.mode_set(mode='OBJECT')
