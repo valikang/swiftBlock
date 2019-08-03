@@ -1,7 +1,7 @@
 bl_info = {
     "name": "SwiftBlock",
     "author": "Karl-Johan Nogenmyr, Mikko Folkersma, Turo Valikangas, Tuomo Keskitalo",
-    "version": (0, 3),
+    "version": (0, 4),
     "blender": (2, 80, 0),
     "location": "View_3D > Object > SwiftBlock",
     "description": "Creates OpenFOAM blockMeshDict block geometry definition file",
