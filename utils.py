@@ -715,8 +715,8 @@ def getPolyLines(verts, edges, bob):
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.select_all(action='DESELECT')
             bpy.ops.object.mode_set(mode='OBJECT')
-            geoobj.data.vertices[snapped_verts[ed[0]]].select_set(True)
-            geoobj.data.vertices[snapped_verts[ed[1]]].select_set(True)
+            geoobj.data.vertices[snapped_verts[ed[0]]].select=True
+            geoobj.data.vertices[snapped_verts[ed[1]]].select=True
             bpy.ops.object.mode_set(mode='EDIT')
             try:
                 bpy.ops.mesh.select_vertex_path(type='EDGE_LENGTH')
