@@ -28,10 +28,12 @@ def vertices_from_mesh(ob):
     '''
 
     # get the modifiers
-    try:
-        mesh = ob.to_mesh(depsgraph=bpy.context.evaluated_depsgraph_get())
-    except RuntimeError:
-        raise StopIteration
+    if ob.modifiers:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        obj_eval = ob.evaluated_get(depsgraph)
+        mesh = obj_eval.to_mesh()
+    else:
+        mesh = ob.data
 
     matrix = ob.matrix_world.copy()
 
@@ -43,10 +45,12 @@ def edges_from_mesh(ob):
     '''
 
     # get the modifiers
-    try:
-        mesh = ob.to_mesh(depsgraph=bpy.context.evaluated_depsgraph_get())
-    except RuntimeError:
-        raise StopIteration
+    if ob.modifiers:
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        obj_eval = ob.evaluated_get(depsgraph)
+        mesh = obj_eval.to_mesh()
+    else:
+        mesh = ob.data
 
     for e in mesh.edges:
         yield list(e.vertices)
