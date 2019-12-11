@@ -8,31 +8,35 @@ import glob
 from . import utils
 class PreviewMesh():
     def __init__(self, folder=None):
-        if not shutil.which('blockMesh'):
-            raise RuntimeError('ERROR: No BlockMesh Found!')
-        else:
-            self.blockMeshbin = 'blockMesh'
+        #if not shutil.which('blockMesh'):
+        #    # raise RuntimeError('ERROR: Could not find blockMesh! Please source OpenFOAM in terminal and start Blender from that terminal so that BlockMeshMG finds blockMesh command.')
+        #else:
+        #    self.blockMeshbin = 'blockMesh'
         if folder:
             if not os.path.isdir(folder):
                 os.mkdir(folder)
-            if not os.path.isdir(folder+'/constant'):
-                os.mkdir(folder+'/constant')
-            if not os.path.isdir(folder+'/constant/geometry'):
-                os.mkdir(folder+'/constant/geometry')
-            if not os.path.isdir(folder+'/system'):
-                os.mkdir(folder+'/system')
-            self.blockMeshDictPath = folder + '/system/blockMeshDict'
-            self.geomPath = folder+'/constant/geometry'
+            if not os.path.isdir(os.path.join(folder, 'constant')):
+                os.mkdir(os.path.join(folder, 'constant'))
+            if not os.path.isdir(os.path.join(folder, 'constant', 'geometry')):
+                os.mkdir(os.path.join(folder, 'constant', 'geometry'))
+            if not os.path.isdir(os.path.join(folder, 'system')):
+                os.mkdir(os.path.join(folder, 'system'))
+            self.blockMeshDictPath = os.path.join(folder, 'system', 'blockMeshDict')
+            self.geomPath = os.path.join(folder, 'constant', 'geometry')
+            # blockMesh requires controlDict, create one if there is none
+            if not os.path.isfile(os.path.join(folder, 'system', 'controlDict')):
+                cd = open(os.path.join(folder, 'system', 'controlDict'), 'w')
+                cd.write(self.header())
         else:
             self.tempdir = tempfile.mkdtemp()
-            self.blockMeshDictPath = self.tempdir+"/system/blockMeshDict"
-            os.mkdir(self.tempdir+'/constant')
-            os.mkdir(self.tempdir+'/constant/polyMesh')
-            self.geomPath = self.tempdir+'/constant/geometry'
+            self.blockMeshDictPath = os.path.join(self.tempdir, 'system', 'blockMeshDict')
+            os.mkdir(os.path.join(self.tempdir, 'constant'))
+            os.mkdir(os.path.join(self.tempdir, 'constant', 'polyMesh'))
+            self.geomPath = os.path.join(self.tempdir, 'constant', 'geometry')
             os.mkdir(self.geomPath)
-            os.mkdir(self.tempdir+'/system')
-            os.mkdir(self.tempdir+'/0')
-            cd = open(self.tempdir+'/system/controlDict','w')
+            os.mkdir(os.path.join(self.tempdir, 'system'))
+            os.mkdir(os.path.join(self.tempdir, '0'))
+            cd = open(os.path.join(self.tempdir, 'system', 'controlDict'), 'w')
             cd.write(self.header())
             print('OpenFOAM temp directory: {}'.format(self.tempdir))
 
@@ -134,7 +138,7 @@ class PreviewMesh():
         return data
 
     def getPoints(self,faces=None):
-        pointsFile = self.tempdir +'/constant/polyMesh/points'
+        pointsFile = os.path.join(self.tempdir, 'constant', 'polyMesh', 'points')
         startLine, numberofLines = self.readHeader(pointsFile)
         convertfnc1 = lambda x: float(x[1:])
         convertfnc2 = lambda x:float(x[:-1])
@@ -148,7 +152,7 @@ class PreviewMesh():
         return points
 
     def getFaces(self):
-        facesFile = self.tempdir +'/constant/polyMesh/faces'
+        facesFile = os.path.join(self.tempdir, 'constant', 'polyMesh', 'faces')
         startLine, numberofLines = self.readHeader(facesFile)
         convertfnc1 = lambda x: int(x[2:])
         convertfnc2 = lambda x: int(x[:-1])
@@ -163,7 +167,7 @@ class PreviewMesh():
         bcifaces = faces
         bcfaces = faces
         if not internalCells:
-            boundaryFile = self.tempdir + '/constant/polyMesh/boundary'
+            boundaryFile = os.path.join(self.tempdir, 'constant', 'polyMesh', 'boundary')
             startLine, boundaries = self.readHeader(boundaryFile)
             with open(boundaryFile) as fin:
                 fields = self.readBoundaries(itertools.islice(fin,startLine,None))
@@ -179,13 +183,13 @@ class PreviewMesh():
 
 #this is faster
     def getBCFaces2(self,internalCells):
-        facesFile = self.tempdir +'/constant/polyMesh/faces'
+        facesFile = os.path.join(self.tempdir, 'constant', 'polyMesh', 'faces')
         startLine, numberofLines = self.readHeader(facesFile)
         faces = open(facesFile).readlines()
         faces = faces[startLine:startLine+numberofLines]
         subs = lambda s: list(map(int,s.__getitem__(slice(2,-2)).split()))
         faces = list(map(subs, faces))
-        boundaryFile = self.tempdir + '/constant/polyMesh/boundary'
+        boundaryFile = os.path.join(self.tempdir, 'constant', 'polyMesh', 'boundary')
         startLine, boundaries = self.readHeader(boundaryFile)
         with open(boundaryFile) as fin:
             fields = self.readBoundaries(itertools.islice(fin,startLine,None))
@@ -203,8 +207,11 @@ class PreviewMesh():
         subprocess.call([self.blockMeshbin,'-case',self.tempdir],stdout=subprocess.PIPE)
 
     def runMesh(self,runBlockMesh=True,internalCells=False):
-        print('running blockmesh')
+        if not shutil.which('blockMesh'):
+            return [], []
         if runBlockMesh:
+            self.blockMeshbin = 'blockMesh'
+            print('running blockMesh')
             self.runBlockMesh()
         faces, bcifaces=self.getBCFaces2(internalCells)
         points=self.getPoints(faces)
