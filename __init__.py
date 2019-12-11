@@ -50,6 +50,8 @@ class SWIFTBLOCK_PG_EdgeGroupProperty(bpy.types.PropertyGroup):
     group_edges: bpy.props.StringProperty()
 bpy.utils.register_class(SWIFTBLOCK_PG_EdgeGroupProperty)
 
+
+
 # Object properties
 # -----------------
 
@@ -155,12 +157,10 @@ bpy.types.Material.boundary_type = bpy.props.EnumProperty(
 )
 
 # Edge group properties
-bpy.types.Object.swiftBlock_edge_groups = \
+bpy.types.Object.swiftBlock_edgegroups = \
     bpy.props.CollectionProperty(type=SWIFTBLOCK_PG_EdgeGroupProperty)
-bpy.types.Object.swiftBlock_EdgeGroupName = bpy.props.StringProperty(
-    name = "Name", default="group name",
-    description = "Specify name of edge group"
-)
+
+bpy.types.Object.swiftBlock_edgegroup_index = bpy.props.IntProperty()
 
 # Main class definitions
 # ----------------------
@@ -233,18 +233,14 @@ class VIEW3D_PT_SwiftBlockPanel(bpy.types.Panel):
             else:
                 box.operator("swift_block.draw_edge_directions",text='Show edge directions',emboss=False,icon="CHECKBOX_DEHLT").show=True
 
-
             box = self.layout.box()
             box.label(text="Edge groups")
-            split = box.split(factor=0.9)
-            split.prop(ob, 'swiftBlock_EdgeGroupName',text='')
-            split.operator("swift_block.add_edge_group",text='',icon='PLUS',emboss = False)
-            for eg in ob.swiftBlock_edge_groups:
-                split = box.split(factor=0.8, align=True)
-                col = split.column()
-                col.operator("swift_block.get_edge_group", text=eg.group_name , emboss=False).egName = eg.group_name
-                col = split.column()
-                col.operator('swift_block.remove_edge_group', text='',emboss=False,icon='X').egName = eg.group_name
+            row = box.row()
+            row.template_list("SWIFTBLOCK_UL_edgegroup_items", "", ob, "swiftBlock_edgegroups", ob, "swiftBlock_edgegroup_index", rows=max(len(ob.swiftBlock_edgegroups),2))
+            col = row.column(align=True)
+            col.operator("swift_block.edgegroups_action",  text="Add").action = 'ADD'
+            col.operator("swift_block.edgegroups_action",  text="Remove").action = 'REMOVE'
+            col.operator("swift_block.edgegroups_action", text="Select").action = 'SELECT'
 
             box = self.layout.box()
             box.label(text="Projections")
@@ -368,6 +364,55 @@ class SWIFTBLOCK_UL_projection_items(bpy.types.UIList):
         c.proj_id = index
 
 
+class SWIFTBLOCK_UL_edgegroup_items(bpy.types.UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
+        # eg = context.active_object.swiftBlock_edgegroups[index]
+        layout.prop(item, "name", text='', emboss = False)
+
+class SWIFTBLOCK_OT_EdgeGroupsAction(bpy.types.Operator):
+    bl_idname = "swift_block.edgegroups_action"
+    bl_label = "Edge group action"
+    bl_description = "Runs Action on selected edges"
+
+    action: bpy.props.EnumProperty(
+        items=(
+            ('REMOVE', "Remove", ""),
+            ('ADD', "Add", ""),
+            ('SELECT', "Select", ""),
+        )
+    )
+
+    def invoke(self, context, event):
+        ob = context.active_object
+        bm = bmesh.from_edit_mesh(ob.data)
+        egLayer = bm.edges.layers.int.get("edgegroup")
+        index = ob.swiftBlock_edgegroup_index
+
+        if self.action == 'REMOVE':
+            ob.swiftBlock_edgegroups.remove(index)
+            for e in bm.edges:
+                if e[egLayer] == index:
+                    e[egLayer] = -1
+                elif e[egLayer] > index:
+                    e[egLayer] -= 1
+
+        if self.action == 'ADD':
+            index = len(ob.swiftBlock_edgegroups)
+            edgesSelected = False
+            for e in bm.edges:
+                if e.select:
+                    e[egLayer] = len(ob.swiftBlock_edgegroups)
+                    edgesSelected = True
+            if edgesSelected:
+                neweg = ob.swiftBlock_edgegroups.add()
+                neweg.name = 'EdgeGroup_{}'.format(index)
+        if self.action == 'SELECT':
+            for e in bm.edges:
+                if e[egLayer] == index:
+                    e.select = True
+        ob.data.update()
+        return {"FINISHED"}
+
 # Initialize all the bmesh layer properties for the blocking object
 class SWIFTBLOCK_OT_InitBlocking(bpy.types.Operator):
     bl_idname = "swift_block.init_blocking"
@@ -392,6 +437,7 @@ class SWIFTBLOCK_OT_InitBlocking(bpy.types.Operator):
         bm.edges.layers.int.new("cells")
         bm.edges.layers.int.new("groupid")
         bm.edges.layers.int.new("modtime")
+        bm.edges.layers.int.new("edgegroup")
 
         bm.faces.layers.int.new('pos') # block number on positive side of the face, -1 boundary face
         bm.faces.layers.int.new('neg') # block number on negative side of the face, -1 boundary face
@@ -399,7 +445,7 @@ class SWIFTBLOCK_OT_InitBlocking(bpy.types.Operator):
 
         ob.swiftBlock_blocks.clear()
         ob.swiftBlock_projections.clear()
-        ob.swiftBlock_edge_groups.clear()
+        # ob.swiftBlock_edge_groups.clear()
         bpy.ops.swift_block.boundaries_action("INVOKE_DEFAULT",action='ADD')
 
         ob.swiftBlock_isblockingObject = True
@@ -1083,71 +1129,6 @@ class SWIFTBLOCK_OT_EdgetoPolyLine(bpy.types.Operator):
         else:
             return {'PASS_THROUGH'}
 
-
-# Edge group operators
-class SWIFTBLOCK_OT_RemoveEdgeGroup(bpy.types.Operator):
-    bl_idname = "swift_block.remove_edge_group"
-    bl_label = "Remove Edge Group"
-    bl_description = "Remove Edge Group"
-    egName: bpy.props.StringProperty()
-
-    def execute(self, context):
-        ob = context.active_object
-        for i,eg in enumerate(ob.swiftBlock_edge_groups):
-            if eg.group_name == self.egName:
-                ob.swiftBlock_edge_groups.remove(i)
-                return {'FINISHED'}
-        return {'CANCEL'}
-
-class SWIFTBLOCK_OT_GetEdgeGroup(bpy.types.Operator):
-    bl_idname = "swift_block.get_edge_group"
-    bl_label = "Get Edge Group"
-    bl_description = "Get Edge Group"
-
-    egName: bpy.props.StringProperty()
-
-    def execute(self, context):
-        ob = context.active_object
-        bpy.ops.mesh.select_all(action="DESELECT")
-
-        bm = bmesh.from_edit_mesh(ob.data)
-        for eg in ob.swiftBlock_edge_groups:
-            if eg.group_name == self.egName:
-                edges = list(map(int,eg.group_edges.split(',')))
-                for e in edges:
-                    bm.edges[e].select = True
-        ob.data.update()
-        return {'FINISHED'}
-
-
-class SWIFTBLOCK_OT_AddEdgeGroup(bpy.types.Operator):
-    """Set the given name to the selected edges"""
-    bl_idname = "swift_block.add_edge_group"
-    bl_label = "Add Edge Group"
-    bl_description = "Add Edge Group"
-
-    def execute(self, context):
-        ob = context.active_object
-        ob.data.update()
-        bm = bmesh.from_edit_mesh(ob.data)
-        bm.verts.ensure_lookup_table()
-        edges = []
-
-        for e in bm.edges:
-            if e.select:
-                edges.append(e.index)
-
-        edgesstr = ','.join(map(str,edges))
-
-        for e in ob.swiftBlock_edge_groups:
-            if e.group_name == ob.swiftBlock_EdgeGroupName:
-                e.group_edges = edgesstr
-                return {'FINISHED'}
-        eg = ob.swiftBlock_edge_groups.add()
-        eg.group_name = ob.swiftBlock_EdgeGroupName
-        eg.group_edges = edgesstr
-        return {'FINISHED'}
-
 class SWIFTBLOCK_OT_ExtrudeBlocks(bpy.types.Operator):
     """Extrude blocks without removing internal edges"""
     bl_idname = "swift_block.extrude_blocks"
@@ -1293,8 +1274,10 @@ classes = (
     SWIFTBLOCK_UL_block_items,
     SWIFTBLOCK_UL_boundary_items,
     SWIFTBLOCK_UL_projection_items,
+    SWIFTBLOCK_UL_edgegroup_items,
 
     SWIFTBLOCK_OT_BoundariesAction,
+    SWIFTBLOCK_OT_EdgeGroupsAction,
     SWIFTBLOCK_OT_InitBlocking,
     SWIFTBLOCK_OT_BuildBlocking,
     SWIFTBLOCK_OT_PreviewMesh,
@@ -1314,9 +1297,6 @@ classes = (
     SWIFTBLOCK_OT_RemoveProjections,
     SWIFTBLOCK_OT_ActivateSnap,
     SWIFTBLOCK_OT_EdgetoPolyLine,
-    SWIFTBLOCK_OT_RemoveEdgeGroup,
-    SWIFTBLOCK_OT_GetEdgeGroup,
-    SWIFTBLOCK_OT_AddEdgeGroup,
     SWIFTBLOCK_OT_ExtrudeBlocks,
     SWIFTBLOCK_OT_DrawEdgeDirections,
     SWIFTBLOCK_OT_EdgeVisualiser,
