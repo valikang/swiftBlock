@@ -233,6 +233,19 @@ class VIEW3D_PT_SwiftBlockPanel(bpy.types.Panel):
             else:
                 box.operator("swift_block.draw_edge_directions",text='Show edge directions',emboss=False,icon="CHECKBOX_DEHLT").show=True
 
+
+            box = self.layout.box()
+            box.label(text="Edge groups")
+            split = box.split(factor=0.9)
+            split.prop(ob, 'swiftBlock_EdgeGroupName',text='')
+            split.operator("swift_block.add_edge_group",text='',icon='PLUS',emboss = False)
+            for eg in ob.swiftBlock_edge_groups:
+                split = box.split(factor=0.8, align=True)
+                col = split.column()
+                col.operator("swift_block.get_edge_group", text=eg.group_name , emboss=False).egName = eg.group_name
+                col = split.column()
+                col.operator('swift_block.remove_edge_group', text='',emboss=False,icon='X').egName = eg.group_name
+
             box = self.layout.box()
             box.label(text="Projections")
             split = box.split()
@@ -1116,11 +1129,16 @@ class SWIFTBLOCK_OT_AddEdgeGroup(bpy.types.Operator):
     def execute(self, context):
         ob = context.active_object
         ob.data.update()
+        bm = bmesh.from_edit_mesh(ob.data)
+        bm.verts.ensure_lookup_table()
         edges = []
-        for e in ob.data.edges:
+
+        for e in bm.edges:
             if e.select:
                 edges.append(e.index)
+
         edgesstr = ','.join(map(str,edges))
+
         for e in ob.swiftBlock_edge_groups:
             if e.group_name == ob.swiftBlock_EdgeGroupName:
                 e.group_edges = edgesstr
