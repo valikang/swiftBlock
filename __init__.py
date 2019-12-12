@@ -232,7 +232,7 @@ class VIEW3D_PT_SwiftBlockPanel(bpy.types.Panel):
                 box.operator("swift_block.draw_edge_directions",text='Show edge directions',emboss=False,icon="CHECKBOX_HLT").show=False
             else:
                 box.operator("swift_block.draw_edge_directions",text='Show edge directions',emboss=False,icon="CHECKBOX_DEHLT").show=True
-
+            #Edge grouping control panel
             box = self.layout.box()
             box.label(text="Edge groups")
             row = box.row()
@@ -369,6 +369,8 @@ class SWIFTBLOCK_UL_edgegroup_items(bpy.types.UIList):
         # eg = context.active_object.swiftBlock_edgegroups[index]
         layout.prop(item, "name", text='', emboss = False)
 
+
+#Edge grouping function for creating, removing and selecting edges in groups
 class SWIFTBLOCK_OT_EdgeGroupsAction(bpy.types.Operator):
     bl_idname = "swift_block.edgegroups_action"
     bl_label = "Edge group action"
